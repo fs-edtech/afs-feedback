@@ -247,6 +247,37 @@ function renderList(){
   document.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>{state.selectedStudent=Number(b.dataset.student);render()});
 }
 function ownSubjects(){return state.assignments.filter(a=>a.class_id===state.selectedClass&&a.assignment_type==='subject_teacher').map(a=>state.subjects.find(s=>s.id===a.subject_id)).filter(Boolean)}
+// Only files associated with feedback visible under RLS can be listed/opened.
+async function showFeedbackFiles(feedbackIds, container) {
+  if (!container?.isConnected || !feedbackIds.length) return;
+  const {data,error}=await supabase.from('feedback_attachments')
+    .select('id,feedback_id,storage_path,original_filename,mime_type')
+    .in('feedback_id',feedbackIds);
+  if (!container.isConnected) return;
+  if(error){container.textContent='Не удалось загрузить вложения: '+msg(error);return;}
+  for (const host of container.querySelectorAll('[data-files-for]')) {
+    const fid=Number(host.dataset.filesFor);
+    const attachments=(data||[]).filter(a=>a.feedback_id===fid);
+    host.replaceChildren();
+    if(!attachments.length) continue;
+    const title=document.createElement('div');title.className='note';title.textContent='Прикреплённые работы:';host.append(title);
+    for(const file of attachments){
+      const button=document.createElement('button');
+      button.type='button';button.className='btn ghost';
+      button.style.margin='4px 6px 4px 0';
+      button.textContent='📎 '+file.original_filename;
+      button.onclick=async()=>{
+        button.disabled=true;
+        const {data:link,error:linkError}=await supabase.storage.from('feedback-files')
+          .createSignedUrl(file.storage_path,60);
+        button.disabled=false;
+        if(linkError||!link?.signedUrl){alert('Не удалось открыть работу: '+msg(linkError));return;}
+        window.open(link.signedUrl,'_blank','noopener,noreferrer');
+      };
+      host.append(button);
+    }
+  }
+}
 function renderComposer(){
   const s=state.students.find(x=>x.id===state.selectedStudent);
   if(!s){$('#composer').innerHTML='<div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div>';return;}
@@ -258,10 +289,12 @@ function renderComposer(){
   <div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="f-recs" placeholder="Что нужно улучшить"></textarea></div>
   <div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="f-support" placeholder="Поддержка и следующий шаг"></textarea></div>
   <div id="extra-point" hidden><label>Тема точечной обратной связи<input id="f-topic" placeholder="Тема урока"></label></div>
+  <label>Прикрепить работу ученика (до 5 файлов, каждый до 10 МБ)<input type="file" id="f-attachments" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></label>
   <div><h2>Предпросмотр</h2><div id="preview" class="preview"></div></div>
   <div class="actions"><button id="publish" class="btn primary" type="button" ${allowed.length?'':'disabled'}>Опубликовать обратную связь</button></div>
   <div id="notice" role="status" class="note">${allowed.length?'После публикации запись будет доступна в базе. WhatsApp пока не отправляется.':'Нет назначения на предмет этого класса — публикация недоступна.'}</div>
-  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(KINDS[f.kind]||f.kind)} · ${esc(f.status)}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
+  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(KINDS[f.kind]||f.kind)} · ${esc(f.status)}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
+  showFeedbackFiles(history.map(f=>f.id),$('#composer'));
   const preview=()=>{$('#preview').textContent=[$('#f-praise').value,$('#f-recs').value,$('#f-support').value].filter(Boolean).join('\n\n')||'Текст появится здесь'};
   ['#f-praise','#f-recs','#f-support'].forEach(q=>$(q).addEventListener('input',preview));
   $('#f-kind').addEventListener('change',()=>{$('#extra-point').hidden=$('#f-kind').value!=='point'}); preview();
@@ -269,10 +302,34 @@ function renderComposer(){
    if(state.busy)return;const button=$('#publish'); const notice=$('#notice');
    const params={p_student_id:s.id,p_subject_id:Number($('#f-subject').value),p_kind:$('#f-kind').value,p_praise:$('#f-praise').value,p_recommendations:$('#f-recs').value,p_support:$('#f-support').value,p_topic:$('#f-kind').value==='point'?$('#f-topic').value:null,p_error_type:null};
    if([params.p_praise,params.p_recommendations,params.p_support].some(v=>v.trim().length<10)){notice.textContent='Заполни все три поля: минимум 10 символов каждое.';return;}
-   state.busy=true;button.disabled=true;notice.textContent='Публикуем…';
+   const files=Array.from($('#f-attachments').files||[]);
+   const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
+   if(files.length>5||files.some(f=>!mimeExt[f.type]||f.size<1||f.size>10485760||f.name.length>200)){
+     notice.textContent='Можно выбрать до 5 файлов JPG, PNG, WebP или PDF, до 10 МБ каждый.';return;
+   }
+   state.busy=true;button.disabled=true;notice.textContent='Публикуем отзыв…';
    const {data,error}=await supabase.rpc('publish_feedback',params);
-   state.busy=false; if(error){button.disabled=false;notice.textContent='Ошибка: '+msg(error);return;}
-   notice.textContent='Обратная связь опубликована. ID: '+data;try{await loadData()}catch(e){notice.textContent='Запись создана, но обновление списка не удалось: '+msg(e)};
+   if(error){state.busy=false;button.disabled=false;notice.textContent='Ошибка: '+msg(error);return;}
+   let problems=[];
+   for(const file of files){
+     try{
+       const path=`${data}/${crypto.randomUUID()}.${mimeExt[file.type]}`;
+       const {error:registerError}=await supabase.rpc('afs_register_attachment',{
+         p_feedback_id:data,p_storage_path:path,p_original_filename:file.name,
+         p_mime_type:file.type,p_size_bytes:file.size
+       });
+       if(registerError)throw registerError;
+       const {error:uploadError}=await supabase.storage.from('feedback-files')
+         .upload(path,file,{contentType:file.type,upsert:false});
+       if(uploadError)throw uploadError;
+     }catch(e){problems.push(`${file.name}: ${msg(e)}`);}
+   }
+   state.busy=false;
+   const resultMessage=problems.length
+     ?`Отзыв №${data} опубликован, но некоторые файлы не загрузились: ${problems.join('; ')}`
+     :`Отзыв №${data} опубликован. Файлов прикреплено: ${files.length}.`;
+   try{await loadData();if($('#notice'))$('#notice').textContent=resultMessage;}
+   catch(e){if($('#notice'))$('#notice').textContent=resultMessage+' Обновление списка: '+msg(e);}
   });
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">—</div><div class="h">Пока не подключён</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>Полный расчёт охвата за 7/31 день, уведомления и отчёты подключим после тестирования доступа.</p></div>`}
@@ -498,7 +555,8 @@ async function renderParent(){
   const children=state.students.filter(s=>childIds.includes(s.id));
   const feedback=state.feedback.filter(f=>childIds.includes(f.student_id)&&f.status==='published');
   root.innerHTML=`<div class="panel"><h2>Мои дети</h2><p class="note">Здесь отображается только опубликованная обратная связь.</p>
-    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
+    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div><div data-files-for="${f.id}"></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
+  await showFeedbackFiles(feedback.map(f=>f.id),root);
 }
 const {data:{session},error}=await supabase.auth.getSession();
 if(error)$('#login-error').textContent=msg(error);
