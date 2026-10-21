@@ -163,7 +163,6 @@ const isInviteLink = inviteLinkType === 'invite' || inviteLinkType === 'recovery
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{detectSessionInUrl:true}});
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const KINDS={point:'Точечная',weekly:'Еженедельная',monthly:'Ежемесячная',absence:'Отсутствие обучающегося'};
 let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 let settingInvitationPassword = isInviteLink;
@@ -219,9 +218,9 @@ async function loadData(){
   $('#me').textContent=state.profile?.full_name||state.user.email;
   const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
   $('#tab-parent').hidden=!state.roles.includes('parent');
-  if(state.roles.includes('parent')&&!isAdmin){state.tab='parent';}
+  if(state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher')){state.tab='parent';}
   $('#tab-manage').hidden=!isAdmin;
-  for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin;
+  for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
   if(!isAdmin && state.tab==='manage')state.tab='send';
   for(const section of ['send','panel','roster','manage','parent']){
     $('#v-'+section).hidden=section!==state.tab;
@@ -284,23 +283,22 @@ function renderComposer(){
   const allowed=ownSubjects();
   const history=state.feedback.filter(f=>f.student_id===s.id);
   $('#composer').innerHTML=`<div class="compose"><div class="chead"><div><div class="t">${esc(s.full_name)}</div><div class="s">${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</div></div></div>
-  <div class="grid2"><label>Вид обратной связи<select id="f-kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label><label>Предмет<select id="f-subject">${allowed.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label></div>
+  <div class="grid2"><label>Предмет<select id="f-subject">${allowed.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label></div>
   <div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="f-praise" placeholder="Что ребёнку удалось"></textarea></div>
   <div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="f-recs" placeholder="Что нужно улучшить"></textarea></div>
   <div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="f-support" placeholder="Поддержка и следующий шаг"></textarea></div>
-  <div id="extra-point" hidden><label>Тема точечной обратной связи<input id="f-topic" placeholder="Тема урока"></label></div>
   <label>Прикрепить работу ученика (до 5 файлов, каждый до 10 МБ)<input type="file" id="f-attachments" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></label>
   <div><h2>Предпросмотр</h2><div id="preview" class="preview"></div></div>
   <div class="actions"><button id="publish" class="btn primary" type="button" ${allowed.length?'':'disabled'}>Опубликовать обратную связь</button></div>
   <div id="notice" role="status" class="note">${allowed.length?'После публикации запись будет доступна в базе. WhatsApp пока не отправляется.':'Нет назначения на предмет этого класса — публикация недоступна.'}</div>
-  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(KINDS[f.kind]||f.kind)} · ${esc(f.status)}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
+  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(f.status)}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
   showFeedbackFiles(history.map(f=>f.id),$('#composer'));
   const preview=()=>{$('#preview').textContent=[$('#f-praise').value,$('#f-recs').value,$('#f-support').value].filter(Boolean).join('\n\n')||'Текст появится здесь'};
   ['#f-praise','#f-recs','#f-support'].forEach(q=>$(q).addEventListener('input',preview));
-  $('#f-kind').addEventListener('change',()=>{$('#extra-point').hidden=$('#f-kind').value!=='point'}); preview();
+  preview();
   $('#publish').addEventListener('click',async()=>{
    if(state.busy)return;const button=$('#publish'); const notice=$('#notice');
-   const params={p_student_id:s.id,p_subject_id:Number($('#f-subject').value),p_kind:$('#f-kind').value,p_praise:$('#f-praise').value,p_recommendations:$('#f-recs').value,p_support:$('#f-support').value,p_topic:$('#f-kind').value==='point'?$('#f-topic').value:null,p_error_type:null};
+   const params={p_student_id:s.id,p_subject_id:Number($('#f-subject').value),p_kind:'weekly',p_praise:$('#f-praise').value,p_recommendations:$('#f-recs').value,p_support:$('#f-support').value,p_topic:null,p_error_type:null};
    if([params.p_praise,params.p_recommendations,params.p_support].some(v=>v.trim().length<10)){notice.textContent='Заполни все три поля: минимум 10 символов каждое.';return;}
    const files=Array.from($('#f-attachments').files||[]);
    const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
@@ -555,8 +553,28 @@ async function renderParent(){
   const children=state.students.filter(s=>childIds.includes(s.id));
   const feedback=state.feedback.filter(f=>childIds.includes(f.student_id)&&f.status==='published');
   root.innerHTML=`<div class="panel"><h2>Мои дети</h2><p class="note">Здесь отображается только опубликованная обратная связь.</p>
-    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div><div data-files-for="${f.id}"></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
+    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div><div data-files-for="${f.id}"></div><div class="actions" style="margin-top:12px"><button class="btn ghost" type="button" data-ack="${f.id}">Я ознакомился(-ась)</button><span class="note" data-receipt="${f.id}">Ожидает подтверждения</span></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
   await showFeedbackFiles(feedback.map(f=>f.id),root);
+  root.querySelectorAll('details').forEach(details=>details.addEventListener('toggle',async()=>{
+    if(!details.open)return;
+    const b=details.querySelector('[data-ack]');
+    if(!b)return;
+    const id=Number(b.dataset.ack);
+    if(details.dataset.openRecorded==='true')return;
+    details.dataset.openRecorded='true';
+    const {data,error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:id,p_action:'open'});
+    const output=details.querySelector('[data-receipt]');
+    if(error){output.textContent='Не удалось сохранить просмотр: '+msg(error);details.dataset.openRecorded='';return;}
+    if(data?.acknowledged){output.textContent='Вы ознакомились';b.disabled=true;b.textContent='Ознакомление подтверждено';}
+    else output.textContent='Просмотрено · ожидает подтверждения';
+  }));
+  root.querySelectorAll('[data-ack]').forEach(b=>b.addEventListener('click',async()=>{
+    const output=root.querySelector(`[data-receipt="${b.dataset.ack}"]`);
+    b.disabled=true;output.textContent='Сохраняем подтверждение…';
+    const {error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:Number(b.dataset.ack),p_action:'acknowledge'});
+    if(error){b.disabled=false;output.textContent='Ошибка: '+msg(error);return;}
+    b.textContent='Ознакомление подтверждено';output.textContent='Вы ознакомились';
+  }));
 }
 const {data:{session},error}=await supabase.auth.getSession();
 if(error)$('#login-error').textContent=msg(error);
