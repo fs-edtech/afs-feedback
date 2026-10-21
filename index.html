@@ -137,6 +137,7 @@ td.num,th.num{text-align:right}
 </div></header>
 
 <div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Электронная почта<input id="login-email" type="email" autocomplete="username" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
+<div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
 <main class="wrap" id="app-main" hidden>
   <section id="v-send" class="send">
     <div class="panel">
@@ -156,13 +157,35 @@ td.num,th.num{text-align:right}
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 const SUPABASE_URL = 'https://wvkcafxruzguifybeeab.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Invitation/recovery links arrive with a one-time Supabase Auth token.
+const inviteLinkType = new URLSearchParams(location.hash.slice(1)).get('type');
+const isInviteLink = inviteLinkType === 'invite' || inviteLinkType === 'recovery';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{detectSessionInUrl:true}});
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const KINDS={point:'Точечная',weekly:'Еженедельная',monthly:'Ежемесячная',absence:'Отсутствие обучающегося'};
 let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
-function setLogin(isIn){ $('#login-screen').hidden=isIn;$('#app-main').hidden=!isIn;$('#logout').hidden=!isIn;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn); }
+let settingInvitationPassword = isInviteLink;
+function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
+$('#set-password-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const output=$('#set-password-result');
+  const pwd=$('#new-password').value;
+  if(pwd!==$('#confirm-password').value){output.textContent='Пароли не совпадают';return;}
+  if(pwd.length<12){output.textContent='Используйте не менее 12 символов';return;}
+  const {data:{user},error:sessionError}=await supabase.auth.getUser();
+  if(sessionError || !user){output.textContent='Ссылка истекла. Запросите новое приглашение.';return;}
+  const button=e.currentTarget.querySelector('button');button.disabled=true;output.textContent='Сохраняем пароль…';
+  const {error}=await supabase.auth.updateUser({password:pwd});
+  button.disabled=false;
+  if(error){output.textContent='Ошибка: '+msg(error);return;}
+  settingInvitationPassword=false;
+  history.replaceState(null,'',location.pathname);
+  output.textContent='Пароль установлен';
+  const {data:{session}}=await supabase.auth.getSession();
+  await enter(session);
+});
 async function loadData(){
   const queries=[supabase.from('profiles').select('id,full_name,email').eq('id',state.user.id).maybeSingle(),supabase.from('user_roles').select('role').eq('user_id',state.user.id),supabase.from('classes').select('id,name,grade').order('name'),supabase.from('students').select('id,class_id,full_name,status').eq('status','active').order('full_name'),supabase.from('subjects').select('id,name').eq('is_active',true).order('name'),supabase.from('teacher_assignments').select('class_id,subject_id,assignment_type,user_id').eq('user_id',state.user.id),supabase.from('feedback').select('id,student_id,subject_id,author_id,kind,praise,recommendations,support,created_at,published_at,status').order('created_at',{ascending:false}).limit(1000)];
   const results=await Promise.all(queries);
@@ -358,7 +381,13 @@ async function renderManage(){
         <div id="parent-link-result" class="note" role="status"></div>
       </form>
     </div>
-    <form class="compose" id="parent-bind" style="max-width:560px;margin-top:12px"><h2>Активировать личный кабинет</h2>
+    <form class="compose" id="parent-invite" style="max-width:560px;margin-top:12px"><h2>Пригласить родителя по email</h2>
+      <p class="note">Сначала добавьте родителя и привяжите к ученику. Для приглашения используйте доступный вам тестовый адрес. Приглашение создаёт аккаунт и отправляет письмо с установкой пароля.</p>
+      <label>Родитель<select id="parent-invite-id" required></select></label>
+      <button class="btn primary" type="submit">Отправить приглашение</button>
+      <div id="parent-invite-result" class="note" role="status"></div>
+    </form>
+    <form class="compose" id="parent-bind" style="max-width:560px;margin-top:12px"><h2>Активировать личный кабинет вручную</h2>
       <p class="note">Сначала подтвердите личность родителя и создайте ему аккаунт с подтверждённым email в Supabase Authentication. Затем выберите его ниже. Не используйте чужой email без согласия владельца.</p>
       <label>Родитель<select id="parent-bind-id" required></select></label>
       <button class="btn ghost" type="submit">Связать с подтверждённым аккаунтом</button>
@@ -375,7 +404,7 @@ async function renderManage(){
     const parents=data||[];
     $('#parent-directory').innerHTML=parents.length?`<div class="tw"><table><thead><tr><th>ФИО</th><th>Email</th><th>Дети</th><th>Кабинет</th></tr></thead><tbody>${parents.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td><td>${esc((p.student_ids||[]).map(id=>state.students.find(s=>s.id===id)?.full_name||'#'+id).join(', ')||'—')}</td><td>${p.user_id?'Привязан':'Нет аккаунта'}</td></tr>`).join('')}</tbody></table></div>`:'Пока нет родителей.';
     const opts=parents.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.email)}</option>`).join('');
-    $('#parent-link-parent').innerHTML=opts;$('#parent-bind-id').innerHTML=opts;
+    $('#parent-link-parent').innerHTML=opts;$('#parent-bind-id').innerHTML=opts;$('#parent-invite-id').innerHTML=parents.filter(p=>!p.user_id).map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.email)}</option>`).join('');
   }
   async function parentRpc(action,payload,outId){
     const el=$(outId);el.textContent='Сохраняем…';el.className='note';
@@ -385,6 +414,22 @@ async function renderManage(){
   }
   $('#parent-create').onsubmit=async e=>{e.preventDefault();await parentRpc('add_parent',{full_name:$('#parent-name').value,email:$('#parent-email').value,phone:$('#parent-phone').value},'#parent-create-result');};
   $('#parent-link').onsubmit=async e=>{e.preventDefault();await parentRpc('link_student',{parent_id:Number($('#parent-link-parent').value),student_id:Number($('#parent-link-student').value)},'#parent-link-result');};
+  $('#parent-invite').onsubmit=async e=>{
+    e.preventDefault();
+    const output=$('#parent-invite-result');const button=e.currentTarget.querySelector('button');
+    const id=Number($('#parent-invite-id').value);
+    if(!id){output.textContent='Выберите родителя без аккаунта';return;}
+    if(!confirm('Отправить приглашение этому тестовому родителю?'))return;
+    button.disabled=true;output.textContent='Отправляем приглашение…';output.className='note';
+    try{
+      const {data,error}=await supabase.functions.invoke('invite-user',{body:{kind:'parent',parent_id:id}});
+      if(error)throw Error(data?.error || error.message || 'Не удалось отправить приглашение');
+      if(!data?.success)throw Error(data?.error || data?.message || 'Сервер не подтвердил отправку');
+      output.textContent='Приглашение отправлено. Проверьте почтовый ящик и папку «Спам».';
+      output.className='toast ok';await loadParentsAdmin();
+    }catch(err){output.textContent='Ошибка: '+msg(err);output.className='toast bad'}
+    finally{button.disabled=false}
+  };
   $('#parent-bind').onsubmit=async e=>{e.preventDefault();await parentRpc('bind_account',{parent_id:Number($('#parent-bind-id').value)},'#parent-bind-result');};
   await loadParentsAdmin();
   const kind=$('#a-type'),sw=$('#a-subject-wrap');
@@ -433,5 +478,13 @@ async function renderParent(){
   root.innerHTML=`<div class="panel"><h2>Мои дети</h2><p class="note">Здесь отображается только опубликованная обратная связь.</p>
     ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
 }
-const {data:{session},error}=await supabase.auth.getSession();if(error)$('#login-error').textContent=msg(error);await enter(session);
+const {data:{session},error}=await supabase.auth.getSession();
+if(error)$('#login-error').textContent=msg(error);
+if(settingInvitationPassword){
+  $('#set-password-screen').hidden=false;
+  $('#login-screen').hidden=true;
+  $('#app-main').hidden=true;
+  $('#logout').hidden=true;
+  if(!session)$('#set-password-result').textContent='Если ссылка истекла, запросите новое приглашение.';
+}else await enter(session);
 </script>
