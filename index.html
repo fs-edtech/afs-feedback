@@ -129,7 +129,7 @@ td.num,th.num{text-align:right}
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
     <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
-    <button role="tab" id="tab-diagnostic" data-tab="diagnostic" aria-selected="false">Диагностика</button>
+    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Управление</button>
   </nav>
 </div></header>
 
@@ -146,7 +146,7 @@ td.num,th.num{text-align:right}
   </section>
   <section id="v-panel" hidden></section>
   <section id="v-roster" hidden></section>
-  <section id="v-diagnostic" hidden></section>
+  <section id="v-manage" hidden></section>
 </main>
 
 <script type="module">
@@ -169,19 +169,22 @@ async function loadData(){
   state.profile=results[0].data;state.roles=results[1].data.map(x=>x.role);state.classes=results[2].data;state.students=results[3].data;state.subjects=results[4].data;state.assignments=results[5].data;state.feedback=results[6].data;
   if(!state.classes.some(c=>c.id===state.selectedClass))state.selectedClass=state.classes[0]?.id??null;
   $('#me').textContent=state.profile?.full_name||state.user.email;
+  const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
+  $('#tab-manage').hidden=!isAdmin;
+  if(!isAdmin && state.tab==='manage')state.tab='send';
   render();
 }
 async function enter(session){
-  if(!session){state.user=null;setLogin(false);$('#me').textContent='Не авторизован';return;}
+  if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';return;}
   state.user=session.user; setLogin(true);
   try{await loadData()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const {data,error}=await supabase.auth.signInWithPassword({email:$('#login-email').value.trim(),password:$('#login-password').value});if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
 $('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await enter(null)});
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
-function pickTab(tab){state.tab=tab;for(const x of ['send','panel','roster','diagnostic']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
+function pickTab(tab){if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;state.tab=tab;for(const x of ['send','panel','roster','manage']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
-function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else{renderDiagnostic()}}
+function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else{renderManage()}}
 function renderList(){
   $('#classbar').innerHTML=state.classes.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
   $('#slist').innerHTML=classStudents().map(s=>{let last=state.feedback.find(f=>f.student_id===s.id&&f.status==='published');return `<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill ${last?'ok':'bad'}">${last?'Есть отзыв':'Нет отзыва'}</span></button>`}).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
@@ -219,36 +222,50 @@ function renderComposer(){
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">—</div><div class="h">Пока не подключён</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>Полный расчёт охвата за 7/31 день, уведомления и отчёты подключим после тестирования доступа.</p></div>`}
 function renderRoster(){$('#v-roster').innerHTML=`<div class="panel"><h2>Ученики (${state.students.length})</h2><div class="tw"><table><thead><tr><th>Класс</th><th>Ученик</th></tr></thead><tbody>${state.students.map(s=>`<tr><td>${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</td><td>${esc(s.full_name)}</td></tr>`).join('')}</tbody></table></div><p class="note">Добавление и импорт учеников через интерфейс подключим на отдельном этапе.</p></div>`}
-// Temporary diagnostic: deliberately requests a forbidden role so NO user can be created.
-function renderDiagnostic(){
-  const isAdmin=state.roles.some(r=>r==='superadmin'||r==='deputy');
-  const expected=isAdmin?'400 — Пока разрешено создавать только учителей':'403 — Недостаточно прав';
-  $('#v-diagnostic').innerHTML=`<div class="panel" style="max-width:760px"><h2>Проверка прав доступа · manage-staff</h2>
-    <p class="note">Временная диагностическая вкладка. Никаких сотрудников не создаёт: мы специально запрашиваем запрещённую роль <b>superadmin</b>.</p>
-    <p>Аккаунт: <b>${esc(state.profile?.full_name||state.user?.email||'')}</b><br>Роли: <b>${esc(state.roles.join(', ')||'нет')}</b></p>
-    <p>Ожидаемый ответ: <b>${esc(expected)}</b></p>
-    <div class="actions"><button class="btn primary" type="button" id="test-staff">Проверить права</button></div>
-    <div id="test-staff-result" class="note" role="status" style="margin-top:12px" aria-live="polite"></div>
-    <p class="note" style="margin-top:16px">После проверки обычного учителя и суперадминистратора эту вкладку удалим.</p>
+// Administrators can create only teacher accounts in this initial test version.
+function renderManage(){
+  const allowed=state.roles.includes('superadmin')||state.roles.includes('deputy');
+  if(!allowed){$('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;}
+  $('#v-manage').innerHTML=`<div class="forms">
+    <div class="panel"><h2>Добавить преподавателя</h2>
+      <p class="note">Пока только тестовые сотрудники. Создание аккаунта работает, но приглашения и установка пароля ещё не настроены. Не используйте адреса настоящих коллег.</p>
+      <form id="create-teacher" class="compose">
+        <label>ФИО преподавателя<input id="teacher-fullname" type="text" required minlength="3" maxlength="150" autocomplete="off" placeholder="ТЕСТОВЫЙ Преподаватель"></label>
+        <label>Email<input id="teacher-email" type="email" required maxlength="254" autocomplete="off" placeholder="your-test-address@example.com"></label>
+        <label>Роль<select disabled><option>Учитель</option></select></label>
+        <button class="btn primary" id="create-teacher-button" type="submit">Добавить учителя</button>
+        <div id="create-teacher-result" class="note" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+    <div class="panel"><h2>Управление школой</h2>
+      <p>Создание и назначение преподавателей будет доступно здесь.</p>
+      <div class="att"><div><span>Сотрудники</span><span>Первый этап</span></div><div><span>Назначение классов и предметов</span><span>Далее</span></div><div><span>Импорт учеников из Excel</span><span>Далее</span></div><div><span>Приглашения и пароли</span><span>Далее</span></div></div>
+      <p class="note" style="margin-top:16px">Создание учетной записи не назначает преподавателю классы. Пока это отдельный следующий шаг.</p>
+    </div>
   </div>`;
-  $('#test-staff').onclick=async()=>{
-    const btn=$('#test-staff'), output=$('#test-staff-result');
-    btn.disabled=true;output.textContent='Проверяем…';
+  $('#create-teacher').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const button=$('#create-teacher-button'), output=$('#create-teacher-result');
+    const fullName=$('#teacher-fullname').value.trim();
+    const email=$('#teacher-email').value.trim().toLowerCase();
+    if(fullName.length<3||!email){output.textContent='Проверьте ФИО и email.';return;}
+    if(!confirm(`Создать тестовую учётную запись преподавателя?\n${fullName}\n${email}\n\nПисьмо-приглашение отправлено не будет.`))return;
+    button.disabled=true;output.className='note';output.textContent='Создаём аккаунт…';
     try{
       const {data:{session},error:sessionError}=await supabase.auth.getSession();
-      if(sessionError||!session?.access_token)throw Error('Сессия не найдена. Войдите повторно.');
-      const result=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{
+      if(sessionError||!session?.access_token)throw Error('Сессия закончилась. Войдите повторно.');
+      const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':`Bearer ${session.access_token}`},
-        body:JSON.stringify({full_name:'ТЕСТ Без создания',email:'never-create@example.invalid',role:'superadmin'})
+        body:JSON.stringify({full_name:fullName,email,role:'teacher'})
       });
-      const data=await result.json().catch(()=>({message:'Ответ без JSON'}));
-      const ok=isAdmin?result.status===400:result.status===403;
-      output.className='toast '+(ok?'ok':'bad');
-      output.textContent=`HTTP ${result.status} · ${data.message||JSON.stringify(data)}. ${ok?'Ожидаемая проверка пройдена.':'Ответ отличается от ожидаемого — пришлите скриншот.'}`;
-    }catch(e){output.className='toast bad';output.textContent='Ошибка: '+msg(e)}
-    finally{btn.disabled=false}
-  };
+      const data=await res.json().catch(()=>({message:'Сервер вернул неизвестный ответ'}));
+      if(!res.ok||!data.success){output.className='toast bad';output.textContent=`Ошибка HTTP ${res.status}: ${data.message||'Не удалось создать преподавателя'}`;return;}
+      output.className='toast ok';output.textContent='Преподаватель создан. Для входа необходимо отдельно настроить приглашение/пароль. ID: '+data.user_id;
+      $('#create-teacher').reset();
+    }catch(err){output.className='toast bad';output.textContent='Ошибка: '+msg(err)}
+    finally{button.disabled=false}
+  });
 }
 const {data:{session},error}=await supabase.auth.getSession();if(error)$('#login-error').textContent=msg(error);await enter(session);
 </script>
