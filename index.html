@@ -168,24 +168,46 @@ let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 let settingInvitationPassword = isInviteLink;
 function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
-$('#set-password-form').addEventListener('submit', async e => {
+// Clear, reliable feedback when completing an email invitation.
+const passwordForm = $('#set-password-form');
+const passwordButton = passwordForm.querySelector('button[type="submit"]');
+const passwordOutput = $('#set-password-result');
+function passwordNotice(text, failed=false) {
+  passwordOutput.className = failed ? 'toast bad' : 'note';
+  passwordOutput.textContent = text;
+}
+// Browser's built-in validation may silently prevent submit on some devices.
+passwordForm.noValidate = true;
+passwordForm.addEventListener('submit', async e => {
   e.preventDefault();
-  const output=$('#set-password-result');
-  const pwd=$('#new-password').value;
-  if(pwd!==$('#confirm-password').value){output.textContent='Пароли не совпадают';return;}
-  if(pwd.length<12){output.textContent='Используйте не менее 12 символов';return;}
-  const {data:{user},error:sessionError}=await supabase.auth.getUser();
-  if(sessionError || !user){output.textContent='Ссылка истекла. Запросите новое приглашение.';return;}
-  const button=e.currentTarget.querySelector('button');button.disabled=true;output.textContent='Сохраняем пароль…';
-  const {error}=await supabase.auth.updateUser({password:pwd});
-  button.disabled=false;
-  if(error){output.textContent='Ошибка: '+msg(error);return;}
-  settingInvitationPassword=false;
-  history.replaceState(null,'',location.pathname);
-  output.textContent='Пароль установлен';
-  const {data:{session}}=await supabase.auth.getSession();
-  await enter(session);
+  const pwd = $('#new-password').value;
+  const confirmPwd = $('#confirm-password').value;
+  if (!pwd || !confirmPwd) { passwordNotice('Заполните оба поля.', true); return; }
+  if (pwd.length < 12) { passwordNotice('Пароль должен содержать минимум 12 символов.', true); return; }
+  if (pwd !== confirmPwd) { passwordNotice('Пароли не совпадают.', true); return; }
+  passwordButton.disabled = true;
+  passwordNotice('Проверяем приглашение…');
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      passwordNotice('Ссылка приглашения истекла или не создала сессию. Запросите новое приглашение.', true);
+      return;
+    }
+    passwordNotice('Сохраняем пароль…');
+    const { error } = await supabase.auth.updateUser({ password: pwd });
+    if (error) { passwordNotice('Ошибка: ' + msg(error), true); return; }
+    settingInvitationPassword = false;
+    history.replaceState(null, '', location.pathname + location.search);
+    passwordNotice('Пароль установлен!');
+    const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+    await enter(refreshedSession || session);
+  } catch (error) {
+    passwordNotice('Не удалось установить пароль: ' + msg(error), true);
+  } finally {
+    passwordButton.disabled = false;
+  }
 });
+
 async function loadData(){
   const queries=[supabase.from('profiles').select('id,full_name,email').eq('id',state.user.id).maybeSingle(),supabase.from('user_roles').select('role').eq('user_id',state.user.id),supabase.from('classes').select('id,name,grade').order('name'),supabase.from('students').select('id,class_id,full_name,status').eq('status','active').order('full_name'),supabase.from('subjects').select('id,name').eq('is_active',true).order('name'),supabase.from('teacher_assignments').select('class_id,subject_id,assignment_type,user_id').eq('user_id',state.user.id),supabase.from('feedback').select('id,student_id,subject_id,author_id,kind,praise,recommendations,support,created_at,published_at,status').order('created_at',{ascending:false}).limit(1000)];
   const results=await Promise.all(queries);
