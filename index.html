@@ -222,7 +222,65 @@ function renderComposer(){
   });
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">—</div><div class="h">Пока не подключён</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>Полный расчёт охвата за 7/31 день, уведомления и отчёты подключим после тестирования доступа.</p></div>`}
-function renderRoster(){$('#v-roster').innerHTML=`<div class="panel"><h2>Ученики (${state.students.length})</h2><div class="tw"><table><thead><tr><th>Класс</th><th>Ученик</th></tr></thead><tbody>${state.students.map(s=>`<tr><td>${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</td><td>${esc(s.full_name)}</td></tr>`).join('')}</tbody></table></div><p class="note">Добавление и импорт учеников через интерфейс подключим на отдельном этапе.</p></div>`}
+function renderRoster(){
+  const admin=state.roles.some(r=>r==='superadmin'||r==='deputy');
+  const opts=state.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const rows=state.students.map(st=>`<tr><td>${esc(state.classes.find(c=>c.id===st.class_id)?.name||'')}</td><td>${esc(st.full_name)}</td>${admin?`<td><button type="button" class="btn ghost" data-edit-student="${st.id}">Редактировать</button></td>`:''}</tr>`).join('');
+  $('#v-roster').innerHTML=`<div class="panel"><h2>Ученики (${state.students.length})</h2><div class="tw"><table><thead><tr><th>Класс</th><th>ФИО ученика</th>${admin?'<th>Действие</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`+
+  (admin?`<div class="forms" style="margin-top:16px"><div class="panel"><h2 id="student-editor-title">Добавить ученика</h2><form id="student-editor" class="compose"><input type="hidden" id="student-edit-id"><label>ФИО ученика<input id="student-name" required minlength="3" maxlength="160" placeholder="ТЕСТОВЫЙ Ученик"></label><label>Класс<select id="student-class" required>${opts}</select></label><div class="actions"><button class="btn primary" type="submit">Сохранить</button><button class="btn ghost" type="button" id="student-clear">Сбросить</button></div><div id="student-result" class="note" role="status"></div></form></div><div class="panel"><h2>Массовая загрузка учеников</h2><p class="note">Выберите класс и файл Excel (.xlsx) или CSV. Поддерживается таблица с заголовком «ФИО» или первый столбец с ФИО. Один файл — один класс; максимум 200 строк за загрузку.</p><form id="students-import" class="compose"><label>Класс<select id="import-class" required>${opts}</select></label><label>Файл Excel / CSV<input id="students-file" type="file" accept=".xlsx,.xls,.csv" required></label><button class="btn ghost" type="button" id="students-preview">Предпросмотр файла</button><div id="import-preview" class="note" role="status"></div><button class="btn primary" type="submit" id="import-submit" disabled>Импортировать учеников</button><div id="import-result" class="note" role="status"></div></form></div></div>`:'');
+  if(!admin)return;
+  const editor=$('#student-editor');
+  $('#student-clear').onclick=()=>{editor.reset();$('#student-edit-id').value='';$('#student-editor-title').textContent='Добавить ученика';$('#student-result').textContent=''};
+  document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>{
+    const st=state.students.find(x=>x.id===Number(b.dataset.editStudent));if(!st)return;
+    $('#student-edit-id').value=st.id;$('#student-name').value=st.full_name;$('#student-class').value=st.class_id;
+    $('#student-editor-title').textContent='Редактировать ученика';$('#student-result').textContent='';
+    editor.scrollIntoView({behavior:'smooth',block:'center'});
+  });
+  async function execute(action,payload){const {data,error}=await supabase.rpc('afs_manage_students',{p_action:action,p_payload:payload});if(error)throw error;return data;}
+  editor.onsubmit=async e=>{e.preventDefault();const out=$('#student-result'),button=editor.querySelector('[type="submit"]');button.disabled=true;out.textContent='Сохраняем…';try{
+    const id=$('#student-edit-id').value;const data=await execute(id?'update_student':'add_student',{student_id:id?Number(id):null,full_name:$('#student-name').value.trim(),class_id:Number($('#student-class').value)});
+    await reloadStudents();out.className='toast ok';out.textContent=data.message;renderRoster();$('#student-result').textContent=data.message;
+  }catch(err){out.className='toast bad';out.textContent=msg(err)}finally{button.disabled=false}};
+  let parsed=[];let currentFile=null;
+  $('#students-file').onchange=()=>{parsed=[];currentFile=null;$('#import-submit').disabled=true;$('#import-preview').textContent='Нажмите «Предпросмотр файла»'};
+  $('#import-class').onchange=()=>{parsed=[];$('#import-submit').disabled=true;$('#import-preview').textContent='Класс изменён, повторите предпросмотр'};
+  $('#students-preview').onclick=async()=>{
+    const file=$('#students-file').files?.[0],out=$('#import-preview');parsed=[];$('#import-submit').disabled=true;
+    if(!file){out.textContent='Сначала выберите файл';return}
+    if(file.size>3*1024*1024){out.textContent='Файл превышает 3 МБ';return}
+    out.textContent='Читаем файл…';
+    try{
+      const mod=await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      const workbook=mod.read(await file.arrayBuffer(),{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const grid=mod.utils.sheet_to_json(sheet,{header:1,defval:'',blankrows:false});
+      if(!grid.length)throw Error('Файл пустой');
+      const header=grid[0].map(v=>String(v).toLowerCase().trim());
+      let col=header.findIndex(v=>v==='фио'||v==='ф.и.о.'||v==='фамилия имя отчество'||v==='ученик'||v==='учащийся');
+      const hasHeader=col>=0;if(col<0)col=0;
+      parsed=grid.slice(hasHeader?1:0).map(row=>String(row[col]??'').replace(/\s+/g,' ').trim()).filter(Boolean);
+      if(parsed.length<1||parsed.length>200)throw Error('Нужно от 1 до 200 учеников в одном файле');
+      if(parsed.some(name=>name.length<3||name.length>160))throw Error('Проверьте ФИО: допустимо 3–160 символов');
+      currentFile=file;
+      const duplicates=parsed.length-new Set(parsed.map(n=>n.toLowerCase())).size;
+      out.innerHTML=`<b>Готово к загрузке: ${parsed.length} записей.</b> ${duplicates?'Повторы внутри файла: '+duplicates+'.':''}<div class="preview" style="margin-top:8px;max-height:150px;overflow:auto">${parsed.slice(0,12).map(esc).join('<br>')}${parsed.length>12?'<br>…':''}</div>`;
+      $('#import-submit').disabled=false;
+    }catch(err){out.textContent='Ошибка чтения: '+msg(err)}
+  };
+  $('#students-import').onsubmit=async e=>{
+    e.preventDefault();const out=$('#import-result'),btn=$('#import-submit');if(!parsed.length||!currentFile){out.textContent='Сначала выполните предпросмотр';return}
+    btn.disabled=true;out.className='note';out.textContent='Импортируем…';
+    try{const class_id=Number($('#import-class').value);const data=await execute('import_students',{students:parsed.map(full_name=>({full_name,class_id}))});
+      await reloadStudents();renderRoster();$('#import-result').className='toast ok';$('#import-result').textContent=`Добавлено: ${data.created}. Пропущено повторов: ${data.skipped}.`;
+    }catch(err){out.className='toast bad';out.textContent=msg(err);btn.disabled=false}
+  };
+}
+async function reloadStudents(){
+  const {data,error}=await supabase.from('students').select('id,class_id,full_name,status').eq('status','active').order('full_name').limit(10000);
+  if(error)throw error;state.students=data||[];
+}
+
 // School management: server-authorized RPCs; no service keys in this file.
 async function refreshManageData(){
   const [{data:staff,error:e1},{data:classes,error:e2},{data:subjects,error:e3},{data:assignments,error:e4}]=await Promise.all([
