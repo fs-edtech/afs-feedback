@@ -222,50 +222,89 @@ function renderComposer(){
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">—</div><div class="h">Пока не подключён</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>Полный расчёт охвата за 7/31 день, уведомления и отчёты подключим после тестирования доступа.</p></div>`}
 function renderRoster(){$('#v-roster').innerHTML=`<div class="panel"><h2>Ученики (${state.students.length})</h2><div class="tw"><table><thead><tr><th>Класс</th><th>Ученик</th></tr></thead><tbody>${state.students.map(s=>`<tr><td>${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</td><td>${esc(s.full_name)}</td></tr>`).join('')}</tbody></table></div><p class="note">Добавление и импорт учеников через интерфейс подключим на отдельном этапе.</p></div>`}
-// Administrators can create only teacher accounts in this initial test version.
-function renderManage(){
-  const allowed=state.roles.includes('superadmin')||state.roles.includes('deputy');
-  if(!allowed){$('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;}
-  $('#v-manage').innerHTML=`<div class="forms">
-    <div class="panel"><h2>Добавить преподавателя</h2>
-      <p class="note">Пока только тестовые сотрудники. Создание аккаунта работает, но приглашения и установка пароля ещё не настроены. Не используйте адреса настоящих коллег.</p>
-      <form id="create-teacher" class="compose">
-        <label>ФИО преподавателя<input id="teacher-fullname" type="text" required minlength="3" maxlength="150" autocomplete="off" placeholder="ТЕСТОВЫЙ Преподаватель"></label>
-        <label>Email<input id="teacher-email" type="email" required maxlength="254" autocomplete="off" placeholder="your-test-address@example.com"></label>
-        <label>Роль<select disabled><option>Учитель</option></select></label>
-        <button class="btn primary" id="create-teacher-button" type="submit">Добавить учителя</button>
-        <div id="create-teacher-result" class="note" role="status" aria-live="polite"></div>
-      </form>
-    </div>
-    <div class="panel"><h2>Управление школой</h2>
-      <p>Создание и назначение преподавателей будет доступно здесь.</p>
-      <div class="att"><div><span>Сотрудники</span><span>Первый этап</span></div><div><span>Назначение классов и предметов</span><span>Далее</span></div><div><span>Импорт учеников из Excel</span><span>Далее</span></div><div><span>Приглашения и пароли</span><span>Далее</span></div></div>
-      <p class="note" style="margin-top:16px">Создание учетной записи не назначает преподавателю классы. Пока это отдельный следующий шаг.</p>
-    </div>
-  </div>`;
-  $('#create-teacher').addEventListener('submit',async e=>{
-    e.preventDefault();
-    const button=$('#create-teacher-button'), output=$('#create-teacher-result');
-    const fullName=$('#teacher-fullname').value.trim();
-    const email=$('#teacher-email').value.trim().toLowerCase();
-    if(fullName.length<3||!email){output.textContent='Проверьте ФИО и email.';return;}
-    if(!confirm(`Создать тестовую учётную запись преподавателя?\n${fullName}\n${email}\n\nПисьмо-приглашение отправлено не будет.`))return;
-    button.disabled=true;output.className='note';output.textContent='Создаём аккаунт…';
+// School management: server-authorized RPCs; no service keys in this file.
+async function refreshManageData(){
+  const [{data:staff,error:e1},{data:classes,error:e2},{data:subjects,error:e3},{data:assignments,error:e4}]=await Promise.all([
+    supabase.rpc('afs_staff_directory'),
+    supabase.from('classes').select('id,name,grade').order('name'),
+    supabase.from('subjects').select('id,name').eq('is_active',true).order('name'),
+    supabase.from('teacher_assignments').select('id,user_id,class_id,subject_id,assignment_type')
+  ]);
+  const error=e1||e2||e3||e4;
+  if(error)throw error;
+  return {staff:staff||[],classes:classes||[],subjects:subjects||[],assignments:assignments||[]};
+}
+async function renderManage(){
+  if(!state.roles.some(r=>r==='superadmin'||r==='deputy')){
+    $('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;
+  }
+  const root=$('#v-manage');
+  root.innerHTML='<div class="panel"><h2>Управление школой</h2><p class="note">Загружаем преподавателей, классы и предметы…</p></div>';
+  let d;
+  try{d=await refreshManageData()}catch(e){root.innerHTML=`<div class="toast bad">Ошибка загрузки управления: ${esc(msg(e))}. Сначала выполните SQL №21.</div>`;return;}
+  if(state.tab!=='manage')return;
+  const t=d.staff.filter(x=>x.roles?.includes('teacher'));
+  const option=(arr,label)=>arr.map(x=>`<option value="${esc(x.id)}">${esc(label(x))}</option>`).join('');
+  root.innerHTML=`<div class="tiles">
+    <div class="tile"><div class="k">Сотрудники</div><div class="v">${d.staff.length}</div></div>
+    <div class="tile"><div class="k">Классы</div><div class="v">${d.classes.length}</div></div>
+    <div class="tile"><div class="k">Предметы</div><div class="v">${d.subjects.length}</div></div>
+    <div class="tile"><div class="k">Назначения</div><div class="v">${d.assignments.length}</div></div>
+  </div><div class="forms">
+    <div class="panel"><h2>Добавить преподавателя</h2><form id="create-teacher" class="compose">
+      <label>ФИО<input id="teacher-fullname" required minlength="3" maxlength="150" placeholder="ТЕСТОВЫЙ Преподаватель"></label>
+      <label>Email<input id="teacher-email" type="email" required maxlength="254" placeholder="Адрес для тестирования"></label>
+      <button class="btn primary" type="submit">Добавить учителя</button><div id="staff-result" class="note" role="status"></div>
+      <p class="note">Учётная запись создаётся без пароля. Рассылку приглашений подключим отдельно.</p>
+    </form></div>
+    <div class="panel"><h2>Назначить преподавателя</h2><form id="assign-form" class="compose">
+      <label>Преподаватель<select id="a-teacher" required>${option(t,x=>x.full_name)}</select></label>
+      <div class="grid2"><label>Класс<select id="a-class" required>${option(d.classes,x=>x.name)}</select></label>
+      <label>Тип назначения<select id="a-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label></div>
+      <label id="a-subject-wrap">Предмет<select id="a-subject" required>${option(d.subjects,x=>x.name)}</select></label>
+      <button class="btn primary" type="submit" ${!t.length||!d.classes.length||!d.subjects.length?'disabled':''}>Сохранить назначение</button><div id="assign-result" class="note" role="status"></div>
+    </form></div>
+    <div class="panel"><h2>Новый класс</h2><form id="class-form" class="compose">
+      <label>Обозначение класса<input id="new-class-name" required maxlength="20" placeholder="5А"></label>
+      <label>Параллель<input id="new-class-grade" required type="number" min="0" max="11" value="5"></label>
+      <button class="btn primary" type="submit">Создать класс</button><div id="class-result" class="note" role="status"></div>
+    </form></div>
+    <div class="panel"><h2>Новый предмет</h2><form id="subject-form" class="compose">
+      <label>Название<input id="new-subject-name" required maxlength="100" placeholder="Математика"></label>
+      <button class="btn primary" type="submit">Добавить предмет</button><div id="subject-result" class="note" role="status"></div>
+    </form></div>
+  </div><div class="panel"><h2>Сотрудники и назначения</h2><div class="tw"><table><thead><tr><th>ФИО</th><th>Email</th><th>Роли</th><th>Назначения</th></tr></thead><tbody>
+    ${d.staff.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.email||'')}</td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
+      const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';const sub=d.subjects.find(z=>z.id===a.subject_id)?.name||'';
+      return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+    }).join('; ')||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const kind=$('#a-type'),sw=$('#a-subject-wrap');
+  const sync=()=>{sw.hidden=kind.value==='homeroom';$('#a-subject').required=kind.value!=='homeroom'};
+  kind.onchange=sync;sync();
+  const run=async(formId,outputId,fn)=>{
+    const form=$(formId),output=$(outputId),button=form.querySelector('button[type="submit"]');
+    button.disabled=true;output.className='note';output.textContent='Сохраняем…';
     try{
-      const {data:{session},error:sessionError}=await supabase.auth.getSession();
-      if(sessionError||!session?.access_token)throw Error('Сессия закончилась. Войдите повторно.');
-      const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':`Bearer ${session.access_token}`},
-        body:JSON.stringify({full_name:fullName,email,role:'teacher'})
-      });
-      const data=await res.json().catch(()=>({message:'Сервер вернул неизвестный ответ'}));
-      if(!res.ok||!data.success){output.className='toast bad';output.textContent=`Ошибка HTTP ${res.status}: ${data.message||'Не удалось создать преподавателя'}`;return;}
-      output.className='toast ok';output.textContent='Преподаватель создан. Для входа необходимо отдельно настроить приглашение/пароль. ID: '+data.user_id;
-      $('#create-teacher').reset();
-    }catch(err){output.className='toast bad';output.textContent='Ошибка: '+msg(err)}
-    finally{button.disabled=false}
-  });
+      const result=await fn();output.className='toast ok';output.textContent=result;
+      setTimeout(()=>{if(state.tab==='manage')renderManage()},1200);
+    }catch(e){output.className='toast bad';output.textContent=msg(e)}finally{button.disabled=false}
+  };
+  const rpc=async(p_action,p_payload)=>{
+    const {data,error}=await supabase.rpc('afs_manage_school',{p_action,p_payload});
+    if(error)throw error;return data.message;
+  };
+  $('#class-form').onsubmit=e=>{e.preventDefault();run('#class-form','#class-result',()=>rpc('add_class',{name:$('#new-class-name').value,grade:Number($('#new-class-grade').value)}))};
+  $('#subject-form').onsubmit=e=>{e.preventDefault();run('#subject-form','#subject-result',()=>rpc('add_subject',{name:$('#new-subject-name').value}))};
+  $('#assign-form').onsubmit=e=>{e.preventDefault();run('#assign-form','#assign-result',()=>rpc('assign_teacher',{
+    teacher_id:$('#a-teacher').value,class_id:Number($('#a-class').value),assignment_type:$('#a-type').value,
+    subject_id:$('#a-type').value==='subject_teacher'?Number($('#a-subject').value):null
+  }))};
+  $('#create-teacher').onsubmit=e=>{e.preventDefault();run('#create-teacher','#staff-result',async()=>{
+    const {data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw Error('Войдите повторно');
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({full_name:$('#teacher-fullname').value.trim(),email:$('#teacher-email').value.trim(),role:'teacher'})});
+    const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(`HTTP ${res.status}: ${data.message||'Ошибка сервера'}`);
+    return 'Преподаватель создан. ID: '+data.user_id;
+  })};
 }
 const {data:{session},error}=await supabase.auth.getSession();if(error)$('#login-error').textContent=msg(error);await enter(session);
 </script>
