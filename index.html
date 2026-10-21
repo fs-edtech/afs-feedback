@@ -32,6 +32,8 @@
   --ok:#5DBB85; --ok-bg:#16281E; --warn:#E2B04A; --warn-bg:#2C2414; --bad:#EF7B72; --bad-bg:#311A19;
   --focus:#7FA6F0; color-scheme:dark }
 *{box-sizing:border-box}
+/* Скрытые вкладки не должны отображаться, даже если у них display:grid */
+[hidden]{display:none !important}
 body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--f-body);font-variant-numeric:tabular-nums}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
 .wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1240px;margin:0 auto}
@@ -133,9 +135,8 @@ td.num,th.num{text-align:right}
   </nav>
 </div></header>
 
-<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Тестовая версия. Войдите с учётной записью, созданной в Supabase Authentication.</p><form id="login-form" class="compose"><label>Электронная почта<input id="login-email" type="email" autocomplete="username" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
+<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Электронная почта<input id="login-email" type="email" autocomplete="username" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
 <main class="wrap" id="app-main" hidden>
-  <div class="demo">Тестовая версия: используйте только вымышленные данные. WhatsApp и загрузка файлов пока не подключены.</div>
   <section id="v-send" class="send">
     <div class="panel">
       <h2>Ученики класса</h2>
