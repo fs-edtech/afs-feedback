@@ -130,6 +130,7 @@ td.num,th.num{text-align:right}
   <nav class="tabs" role="tablist" aria-label="Разделы">
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
+    <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button>
     <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
     <button role="tab" id="tab-parent" data-tab="parent" aria-selected="false" hidden>Мои дети</button>
     <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Управление</button>
@@ -148,6 +149,7 @@ td.num,th.num{text-align:right}
     <div class="panel" id="composer"><div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div></div>
   </section>
   <section id="v-panel" hidden></section>
+  <section id="v-class" hidden></section>
   <section id="v-roster" hidden></section>
   <section id="v-manage" hidden></section>
   <section id="v-parent" hidden></section>
@@ -163,7 +165,7 @@ const isInviteLink = inviteLinkType === 'invite' || inviteLinkType === 'recovery
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{detectSessionInUrl:true}});
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
+let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 let settingInvitationPassword = isInviteLink;
 function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
@@ -214,15 +216,20 @@ async function loadData(){
   const errors=results.map((r,i)=>r.error?labels[i]+': '+msg(r.error):null).filter(Boolean);
   if(errors.length) throw Error(errors.join(' | '));
   state.profile=results[0].data;state.roles=results[1].data.map(x=>x.role);state.classes=results[2].data;state.students=results[3].data;state.subjects=results[4].data;state.assignments=results[5].data;state.feedback=results[6].data;
+  // Aggregated feed is server-authorized; never expose parent receipts via direct table reads.
+  const {data:staffFeed,error:feedError}=await supabase.rpc('afs_staff_feedback_feed');
+  if(feedError) throw Error('История преподавателей: '+msg(feedError)+' (выполните SQL №28)');
+  state.staffFeed=staffFeed||[];
   if(!state.classes.some(c=>c.id===state.selectedClass))state.selectedClass=state.classes[0]?.id??null;
   $('#me').textContent=state.profile?.full_name||state.user.email;
   const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
   $('#tab-parent').hidden=!state.roles.includes('parent');
+  $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>a.assignment_type==='homeroom'));
   if(state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher')){state.tab='parent';}
   $('#tab-manage').hidden=!isAdmin;
   for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
   if(!isAdmin && state.tab==='manage')state.tab='send';
-  for(const section of ['send','panel','roster','manage','parent']){
+  for(const section of ['send','panel','class','roster','manage','parent']){
     $('#v-'+section).hidden=section!==state.tab;
     $('#tab-'+section).setAttribute('aria-selected',String(section===state.tab));
   }
@@ -236,9 +243,9 @@ async function enter(session){
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const {data,error}=await supabase.auth.signInWithPassword({email:$('#login-email').value.trim(),password:$('#login-password').value});if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
 $('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await enter(null)});
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
-function pickTab(tab){if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','roster','manage','parent']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
+function pickTab(tab){if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
-function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
+function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
 function renderList(){
   $('#classbar').innerHTML=state.classes.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
   $('#slist').innerHTML=classStudents().map(s=>{let last=state.feedback.find(f=>f.student_id===s.id&&f.status==='published');return `<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill ${last?'ok':'bad'}">${last?'Есть отзыв':'Нет отзыва'}</span></button>`}).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
@@ -281,7 +288,7 @@ function renderComposer(){
   const s=state.students.find(x=>x.id===state.selectedStudent);
   if(!s){$('#composer').innerHTML='<div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div>';return;}
   const allowed=ownSubjects();
-  const history=state.feedback.filter(f=>f.student_id===s.id);
+  const history=state.staffFeed.filter(f=>f.student_id===s.id);
   $('#composer').innerHTML=`<div class="compose"><div class="chead"><div><div class="t">${esc(s.full_name)}</div><div class="s">${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</div></div></div>
   <div class="grid2"><label>Предмет<select id="f-subject">${allowed.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label></div>
   <div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="f-praise" placeholder="Что ребёнку удалось"></textarea></div>
@@ -291,7 +298,7 @@ function renderComposer(){
   <div><h2>Предпросмотр</h2><div id="preview" class="preview"></div></div>
   <div class="actions"><button id="publish" class="btn primary" type="button" ${allowed.length?'':'disabled'}>Опубликовать обратную связь</button></div>
   <div id="notice" role="status" class="note">${allowed.length?'После публикации запись будет доступна в базе. WhatsApp пока не отправляется.':'Нет назначения на предмет этого класса — публикация недоступна.'}</div>
-  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(f.status)}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
+  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(f.author_name||'Преподаватель')} · ${esc(receiptLabel(f))}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div class="note" style="margin-top:7px">Автор: ${esc(f.author_name)} · ${esc(new Date(f.published_at).toLocaleString('ru-RU'))}</div>${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
   showFeedbackFiles(history.map(f=>f.id),$('#composer'));
   const preview=()=>{$('#preview').textContent=[$('#f-praise').value,$('#f-recs').value,$('#f-support').value].filter(Boolean).join('\n\n')||'Текст появится здесь'};
   ['#f-praise','#f-recs','#f-support'].forEach(q=>$(q).addEventListener('input',preview));
@@ -329,6 +336,51 @@ function renderComposer(){
    try{await loadData();if($('#notice'))$('#notice').textContent=resultMessage;}
    catch(e){if($('#notice'))$('#notice').textContent=resultMessage+' Обновление списка: '+msg(e);}
   });
+}
+function receiptLabel(f){
+  const total=Number(f.parents_total||0),opened=Number(f.opened_count||0),ack=Number(f.acknowledged_count||0);
+  if(!total)return 'Родительский аккаунт пока не привязан';
+  if(ack===total)return 'Ознакомились: '+ack+' из '+total;
+  if(ack)return 'Ознакомились: '+ack+' из '+total;
+  if(opened)return 'Просмотрено · подтверждения нет';
+  return 'Не просмотрено';
+}
+function receiptBreakdown(f){
+  const details=Array.isArray(f.receipt_details)?f.receipt_details:[];
+  if(!details.length)return '<p class="note">Нет привязанных родительских аккаунтов.</p>';
+  return `<details style="margin:8px 0"><summary>Родители: ${esc(receiptLabel(f))}</summary><div class="att">${details.map(p=>{
+    const when=p.acknowledged_at||p.opened_at;
+    const status=p.acknowledged_at?'Ознакомлен':p.opened_at?'Просмотрено':'Не просмотрено';
+    return `<div><span>${esc(p.parent_name)}</span><span>${esc(status)}${when?' · '+esc(new Date(when).toLocaleString('ru-RU')):''}</span></div>`;
+  }).join('')}</div></details>`;
+}
+function renderMyClass(){
+  const root=$('#v-class');
+  const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
+  const allowedClasses=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  if(!allowedClasses.length){root.innerHTML='<div class="panel"><p>Нет назначенного классного руководства.</p></div>';return;}
+  const selected=allowedClasses.some(c=>c.id===state.selectedClass)?state.selectedClass:allowedClasses[0].id;
+  const pupils=state.students.filter(s=>s.class_id===selected);
+  const visibleFeed=state.staffFeed.filter(f=>f.class_id===selected);
+  const countConfirmed=visibleFeed.filter(f=>Number(f.parents_total)>0&&Number(f.parents_total)===Number(f.acknowledged_count)).length;
+  const rows=pupils.map(st=>{
+    const list=visibleFeed.filter(f=>f.student_id===st.id);
+    return `<details class="panel" style="margin:8px 0"><summary><b>${esc(st.full_name)}</b> · ${list.length} отзыв(ов)</summary>
+    ${list.map(f=>`<details class="panel" style="margin:9px 0"><summary>${esc(new Date(f.published_at).toLocaleString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Предмет')} · ${esc(f.author_name)} · ${esc(receiptLabel(f))}</summary>
+    <div class="layer bun top" style="margin-top:10px"><b>Похвала</b><div>${esc(f.praise)}</div></div>
+    <div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div>
+    <div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div>
+    ${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</details>`;
+  }).join('');
+  root.innerHTML=`<div class="panel"><h2>Мой класс · отзывы всех предметников</h2>
+    <p class="note">Просмотр опубликованных отзывов. Редактировать чужие записи нельзя.</p>
+    <label>Класс<select id="my-class-select">${allowedClasses.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <div class="tiles" style="margin-top:12px"><div class="tile"><div class="k">Учеников</div><div class="v">${pupils.length}</div></div>
+    <div class="tile"><div class="k">Опубликовано отзывов</div><div class="v">${visibleFeed.length}</div></div>
+    <div class="tile"><div class="k">Все родители ознакомились</div><div class="v">${countConfirmed}</div></div></div>
+    ${rows||'<div class="empty">Ученики не найдены.</div>'}</div>`;
+  $('#my-class-select').onchange=e=>{state.selectedClass=Number(e.target.value);renderMyClass()};
+  showFeedbackFiles(visibleFeed.map(f=>f.id),root);
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">—</div><div class="h">Пока не подключён</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>Полный расчёт охвата за 7/31 день, уведомления и отчёты подключим после тестирования доступа.</p></div>`}
 function renderRoster(){
