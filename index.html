@@ -126,7 +126,7 @@ td.num,th.num{text-align:right}
 
 <header><div class="wrap hrow">
   <div class="brand"><b>Обратная связь AFS</b><span>Astana Future School · учёт обратной связи родителям</span></div>
-  <div class="who"><span id="me">Не авторизован</span><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
+  <div class="who"><span id="me">Не авторизован</span><button id="change-password-open" class="btn ghost" type="button" hidden>Сменить пароль</button><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
   <nav class="tabs" role="tablist" aria-label="Разделы">
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
@@ -139,6 +139,14 @@ td.num,th.num{text-align:right}
 
 <div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Электронная почта<input id="login-email" type="email" autocomplete="username" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
 <div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
+<section id="change-password-panel" class="wrap" hidden style="max-width:520px;margin-top:18px">
+  <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose">
+    <label>Новый пароль (минимум 12 символов)<input id="change-password-new" type="password" minlength="12" autocomplete="new-password" required></label>
+    <label>Повторить новый пароль<input id="change-password-confirm" type="password" minlength="12" autocomplete="new-password" required></label>
+    <div class="actions"><button class="btn primary" type="submit">Сохранить пароль</button><button id="change-password-cancel" class="btn ghost" type="button">Отмена</button></div>
+    <div id="change-password-result" class="note" role="status"></div>
+  </form></div>
+</section>
 <main class="wrap" id="app-main" hidden>
   <section id="v-send" class="send">
     <div class="panel">
@@ -168,7 +176,7 @@ const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 let settingInvitationPassword = isInviteLink;
-function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
+function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
 // Clear, reliable feedback when completing an email invitation.
 const passwordForm = $('#set-password-form');
 const passwordButton = passwordForm.querySelector('button[type="submit"]');
@@ -242,6 +250,16 @@ async function enter(session){
 }
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const {data,error}=await supabase.auth.signInWithPassword({email:$('#login-email').value.trim(),password:$('#login-password').value});if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
 $('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await enter(null)});
+$('#change-password-open').onclick=()=>{$('#change-password-panel').hidden=!$('#change-password-panel').hidden;};
+$('#change-password-cancel').onclick=()=>{$('#change-password-panel').hidden=true;};
+$('#change-password-form').onsubmit=async e=>{
+ e.preventDefault();const p=$('#change-password-new').value,c=$('#change-password-confirm').value,output=$('#change-password-result');
+ if(p.length<12 || p!==c){output.textContent='Введите одинаковые пароли длиной не менее 12 символов';return;}
+ output.textContent='Сохраняем…';const {error}=await supabase.auth.updateUser({password:p});
+ if(error){output.textContent='Ошибка: '+msg(error);output.className='toast bad';return;}
+ output.textContent='Пароль изменён';output.className='toast ok';$('#change-password-form').reset();
+};
+
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
 function pickTab(tab){if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
@@ -550,6 +568,12 @@ async function renderManage(){
       <button class="btn primary" type="submit">Добавить учителя</button><div id="staff-result" class="note" role="status"></div>
       <p class="note">Учётная запись создаётся без пароля. Рассылку приглашений подключим отдельно.</p>
     </form></div>
+    <div class="panel"><h2>Массовое создание преподавателей · пакет №30</h2>
+      <p class="note">Только для суперадминистратора. Сначала установите SQL №30А и Edge Function <code>bulk-staff</code>. Пароли показываются только при первом создании — скачайте CSV и храните его закрыто.</p>
+      <label>Файл преподавателей JSON<input id="bulk-staff-file" type="file" accept=".json,application/json"></label>
+      <button id="bulk-staff-submit" type="button" class="btn primary">Создать аккаунты из файла</button>
+      <div id="bulk-staff-result" class="note" role="status"></div>
+    </div>
     <div class="panel"><h2>Назначить преподавателя</h2><form id="assign-form" class="compose">
       <label>Преподаватель<select id="a-teacher" required>${option(t,x=>x.full_name)}</select></label>
       <div class="grid2"><label>Класс<select id="a-class" required>${option(d.classes,x=>x.name)}</select></label>
@@ -655,6 +679,41 @@ async function renderManage(){
     teacher_id:$('#a-teacher').value,class_id:Number($('#a-class').value),assignment_type:$('#a-type').value,
     subject_id:$('#a-type').value==='subject_teacher'?Number($('#a-subject').value):null
   }))};
+  $('#bulk-staff-submit').onclick=async()=>{
+    const field=$('#bulk-staff-file'),button=$('#bulk-staff-submit'),output=$('#bulk-staff-result');
+    if(!state.roles.includes('superadmin')){output.textContent='Нужна роль суперадминистратора';return;}
+    if(!field.files?.length){output.textContent='Выберите файл AFS30_преподаватели_для_импорта.json';return;}
+    let entries;
+    try{const parsed=JSON.parse(await field.files[0].text());entries=parsed.staff;
+      if(!Array.isArray(entries)||!entries.length||entries.length>150)throw Error('Некорректное количество сотрудников');
+    }catch(e){output.textContent='Неверный JSON: '+msg(e);return;}
+    if(!confirm(`Создать до ${entries.length} новых аккаунтов преподавателей? Повторные аккаунты будут пропущены.`))return;
+    button.disabled=true;let credentials=[],reviews=[],errorText='';
+    try{
+      for(let start=0;start<entries.length;start+=8){
+        output.textContent=`Обрабатываем ${Math.min(start+8,entries.length)} из ${entries.length}. Новых: ${credentials.length}.`;
+        const {data,error}=await supabase.functions.invoke('bulk-staff',{body:{staff:entries.slice(start,start+8)}});
+        if(error)throw Error(data?.error||error.message||'Ошибка Edge Function');
+        if(!Array.isArray(data?.results))throw Error(data?.error||'Сервер не вернул результаты');
+        for(const item of data.results){if(item.status==='created')credentials.push(item);
+          else reviews.push(item);}
+      }
+    }catch(err){errorText=msg(err)}finally{
+      if(credentials.length){
+        const csv=[['ФИО','Логин (email)','Временный пароль','Ключ импорта'],...credentials.map(x=>[x.full_name,x.login,x.password,x.staff_key])]
+          .map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+        const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+        const url=URL.createObjectURL(blob),link=document.createElement('a');
+        link.href=url;link.download='AFS30_новые_логины_пароли.csv';document.body.appendChild(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
+      }
+      output.textContent=`Создано аккаунтов: ${credentials.length}; пропущено/на проверку: ${reviews.length}. `+
+        (errorText?'Ошибка: '+errorText+'. ':'')+(credentials.length?'CSV с временными паролями скачан. ':'')+
+        (reviews.length?'Сверьте пропуски: '+reviews.slice(0,12).map(x=>x.staff_key+' ('+x.status+')').join(', '):'');
+      output.className=errorText?'toast bad':'toast ok';button.disabled=false;
+      if(!errorText)await loadData();
+    }
+  };
   $('#create-teacher').onsubmit=e=>{e.preventDefault();run('#create-teacher','#staff-result',async()=>{
     const {data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw Error('Войдите повторно');
     const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({full_name:$('#teacher-fullname').value.trim(),email:$('#teacher-email').value.trim(),role:'teacher'})});
