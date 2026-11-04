@@ -230,7 +230,10 @@ async function loadData(){
   const {data:staffFeed,error:feedError}=await supabase.rpc('afs_staff_feedback_feed');
   if(feedError) throw Error('История преподавателей: '+msg(feedError)+' (выполните SQL №28)');
   state.staffFeed=staffFeed||[];
-  if(!state.classes.some(c=>c.id===state.selectedClass))state.selectedClass=state.classes[0]?.id??null;
+  // Keep the selected class inside the teacher's assigned workload.
+  const canSeeAllClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
+  const selectableClasses=canSeeAllClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
+  if(!selectableClasses.some(c=>c.id===state.selectedClass))state.selectedClass=selectableClasses[0]?.id??null;
   $('#me').textContent=state.profile?.full_name||state.user.email;
   // Показываем должность, а не рекламный подзаголовок. Роли читаются из user_roles.
   const roleLabels = {
@@ -280,12 +283,20 @@ function pickTab(tab){if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
 function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
 function renderList(){
-  $('#classbar').innerHTML=state.classes.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
+  const allClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
+  const visibleClasses=allClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
+  $('#classbar').innerHTML=visibleClasses.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
   $('#slist').innerHTML=classStudents().map(s=>{let last=state.feedback.find(f=>f.student_id===s.id&&f.status==='published');return `<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill ${last?'ok':'bad'}">${last?'Есть отзыв':'Нет отзыва'}</span></button>`}).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
   document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.selectedClass=Number(b.dataset.class);state.selectedStudent=null;render()});
   document.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>{state.selectedStudent=Number(b.dataset.student);render()});
 }
-function ownSubjects(){return state.assignments.filter(a=>a.class_id===state.selectedClass&&a.assignment_type==='subject_teacher').map(a=>state.subjects.find(s=>s.id===a.subject_id)).filter(Boolean)}
+function ownSubjects(){
+  // The superadmin can select any active subject in any class.
+  // Other teachers see only subject assignments for the selected class.
+  if(state.roles.includes('superadmin'))return state.subjects;
+  const subjectIds=new Set(state.assignments.filter(a=>a.class_id===state.selectedClass&&a.assignment_type==='subject_teacher').map(a=>a.subject_id));
+  return state.subjects.filter(s=>subjectIds.has(s.id));
+}
 // Only files associated with feedback visible under RLS can be listed/opened.
 async function showFeedbackFiles(feedbackIds, container) {
   if (!container?.isConnected || !feedbackIds.length) return;
