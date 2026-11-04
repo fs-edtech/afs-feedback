@@ -125,7 +125,7 @@ td.num,th.num{text-align:right}
 </style>
 
 <header><div class="wrap hrow">
-  <div class="brand"><b>Обратная связь AFS</b><span>Astana Future School · учёт обратной связи родителям</span></div>
+  <div class="brand"><b>Обратная связь AFS</b><span id="account-role-label">Вход в систему</span></div>
   <div class="who"><span id="me">Не авторизован</span><button id="change-password-open" class="btn ghost" type="button" hidden>Сменить пароль</button><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
   <nav class="tabs" role="tablist" aria-label="Разделы">
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
@@ -230,6 +230,19 @@ async function loadData(){
   state.staffFeed=staffFeed||[];
   if(!state.classes.some(c=>c.id===state.selectedClass))state.selectedClass=state.classes[0]?.id??null;
   $('#me').textContent=state.profile?.full_name||state.user.email;
+  // Показываем должность, а не рекламный подзаголовок. Роли читаются из user_roles.
+  const roleLabels = {
+    superadmin: 'Суперадмин',
+    director: 'Директор',
+    deputy: 'Завуч',
+    teacher: 'Преподаватель',
+    tutor: 'Куратор',
+    parent: 'Родитель',
+    student: 'Ученик'
+  };
+  const rolePriority = ['superadmin','director','deputy','teacher','tutor','parent','student'];
+  const mainRole = rolePriority.find(role => state.roles.includes(role));
+  $('#account-role-label').textContent = roleLabels[mainRole] || 'Пользователь';
   const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
   $('#tab-parent').hidden=!state.roles.includes('parent');
   $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>a.assignment_type==='homeroom'));
@@ -244,7 +257,7 @@ async function loadData(){
   render();
 }
 async function enter(session){
-  if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';return;}
+  if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
   state.user=session.user; setLogin(true);
   try{await loadData()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
