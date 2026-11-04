@@ -137,7 +137,7 @@ td.num,th.num{text-align:right}
   </nav>
 </div></header>
 
-<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Электронная почта<input id="login-email" type="email" autocomplete="username" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
+<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Email или номер телефона<input id="login-email" type="text" autocomplete="username" placeholder="email@example.com или +7 777 123 45 67" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
 <div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
 <section id="change-password-panel" class="wrap" hidden style="max-width:520px;margin-top:18px">
   <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose">
@@ -175,6 +175,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
+const parentTemporaryCredentials=new Map(); // Только в памяти вкладки, не localStorage.
+
 let settingInvitationPassword = isInviteLink;
 function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
 // Clear, reliable feedback when completing an email invitation.
@@ -261,8 +263,8 @@ async function enter(session){
   state.user=session.user; setLogin(true);
   try{await loadData()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
-$('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const {data,error}=await supabase.auth.signInWithPassword({email:$('#login-email').value.trim(),password:$('#login-password').value});if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
-$('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await enter(null)});
+$('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
+$('#logout').addEventListener('click',async()=>{parentTemporaryCredentials.clear();await supabase.auth.signOut();await enter(null)});
 $('#change-password-open').onclick=()=>{$('#change-password-panel').hidden=!$('#change-password-panel').hidden;};
 $('#change-password-cancel').onclick=()=>{$('#change-password-panel').hidden=true;};
 $('#change-password-form').onsubmit=async e=>{
@@ -432,16 +434,30 @@ async function renderClassParentEditor(classId,root){
     const complete=students.filter(st=>lines.some(r=>r.student_id===st.student_id&&r.parent_name.trim()&&/^\+7[0-9]{10}$/.test(normalizeKzPhone(r.phone)))).length;
     const percent=students.length?Math.round(complete*100/students.length):0;
     host.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>Родители и телефоны класса</h2><span class="pill ${percent===100?'ok':''}">${percent}% · ${complete} из ${students.length}</span></div>
-      <p class="note">Заполните строки класса, затем один раз нажмите «Сохранить изменения». Для второго родителя используйте кнопку «+ Родитель». Номер — будущий логин. Пароли не показываются: их выдача будет подключена отдельно.</p>
-      <div class="tw"><table><thead><tr><th>Ученик</th><th>ФИО родителя</th><th>Телефон / логин</th><th>Пароль / доступ</th><th>WhatsApp: согласие получено</th><th></th></tr></thead><tbody>
+      <p class="note">Заполните строки класса, затем один раз нажмите «Сохранить изменения». Для второго родителя используйте кнопку «+ Родитель». Номер телефона служит логином. Новый временный пароль появится только после выдачи доступа или сброса. Текущий пароль посмотреть нельзя.</p>
+      <div class="tw"><table><thead><tr><th>Ученик</th><th>ФИО родителя</th><th>Телефон / логин</th><th>Доступ и временный пароль</th><th>WhatsApp: согласие получено</th><th></th></tr></thead><tbody>
       ${lines.map((r,i)=>`<tr><td style="min-width:155px"><b>${esc(r.student_name)}</b></td>
         <td><input style="min-width:165px" data-row="${i}" data-field="parent_name" value="${esc(r.parent_name)}" placeholder="ФИО родителя" maxlength="160"></td>
         <td><input style="min-width:160px" data-row="${i}" data-field="phone" type="tel" value="${esc(r.phone)}" placeholder="+7 777 123 45 67"></td>
-        <td><span class="note">${r.has_account?'Аккаунт создан':'Не выдан'}</span></td>
+        <td style="min-width:185px"><span class="note">${r.has_account?'Аккаунт существует':'Нет аккаунта'}</span>
+          ${r.parent_id?(r.has_account?(state.roles.some(x=>x==='superadmin'||x==='deputy')?`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="reset">Сбросить пароль</button><button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="enable_phone">Вход по телефону</button>`:''):`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="create">Выдать доступ</button>`):'<span class="note">Сначала сохраните строку</span>'}
+          ${parentTemporaryCredentials.has(r.parent_id)?`<div class="toast ok">Новый пароль: <b>${esc(parentTemporaryCredentials.get(r.parent_id))}</b></div>`:''}</td>
         <td><input type="checkbox" data-row="${i}" data-field="opt_in" ${r.opt_in?'checked':''} title="Установите только при наличии согласия родителя"></td>
         <td><button class="btn ghost" type="button" data-add-parent="${r.student_id}" title="Добавить строку для второго родителя">+ Родитель</button></td></tr>`).join('')}</tbody></table></div>
-      <p class="note">Отметка WhatsApp означает, что сотрудник подтвердил наличие согласия родителя. Без неё сообщения не ставятся в очередь. Сохранение не создаёт аккаунт и пароль и не отправляет WhatsApp.</p>
-      <button type="button" id="save-class-parents" class="btn primary">Сохранить изменения по классу</button><div id="save-class-parents-result" class="note" role="status"></div>`;
+      <p class="note">Отметка WhatsApp означает, что сотрудник подтвердил наличие согласия родителя. Без неё сообщения не ставятся в очередь. Сохранение таблицы не меняет пароли и не отправляет WhatsApp. Доступ выдаётся отдельной кнопкой, существующие аккаунты не пересоздаются.</p>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
+        <button type="button" id="save-class-parents" class="btn primary">Сохранить изменения по классу</button>
+        ${parentTemporaryCredentials.size?'<button type="button" id="download-parent-passwords" class="btn ghost">Скачать выданные временные пароли (CSV)</button>':''}
+      </div><div id="save-class-parents-result" class="note" role="status"></div>`;
+    const exportButton=host.querySelector('#download-parent-passwords');
+    if(exportButton)exportButton.onclick=()=>{
+      const items=lines.filter(r=>parentTemporaryCredentials.has(r.parent_id));
+      const csv=[['Ученик','Родитель','Логин','Временный пароль'],...items.map(r=>[r.student_name,r.parent_name,normalizeKzPhone(r.phone),parentTemporaryCredentials.get(r.parent_id)])]
+        .map(fields=>fields.map(value=>'"'+String(value||'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+      const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='AFS_родители_временные_пароли.csv';a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),3000);
+    };
     host.querySelectorAll('[data-field]').forEach(input=>input.addEventListener('input',()=>{const r=lines[Number(input.dataset.row)];r[input.dataset.field]=input.type==='checkbox'?input.checked:input.value;}));
     host.querySelectorAll('[data-field="opt_in"]').forEach(x=>x.addEventListener('change',()=>{lines[Number(x.dataset.row)].opt_in=x.checked;}));
     host.querySelectorAll('[data-add-parent]').forEach(button=>button.onclick=()=>{
@@ -449,6 +465,23 @@ async function renderClassParentEditor(classId,root){
       host.querySelectorAll('[data-field]').forEach(el=>{lines[Number(el.dataset.row)][el.dataset.field]=el.type==='checkbox'?el.checked:el.value;});
       const student=students.find(x=>x.student_id===Number(button.dataset.addParent));
       lines.push({student_id:student.student_id,student_name:student.student_name,parent_id:null,parent_name:'',phone:'',opt_in:false,has_account:false});draw();
+    });
+    host.querySelectorAll('[data-parent-account]').forEach(button=>button.onclick=async()=>{
+      const parentId=Number(button.dataset.parentAccount),action=button.dataset.action;
+      if(action==='create'&&!confirm('Создать личный кабинет этому родителю и выдать временный пароль?'))return;
+      if(action==='reset'&&!confirm('Сбросить пароль? Прежний пароль перестанет работать.'))return;
+      if(action==='enable_phone'&&!confirm('Разрешить вход по телефону для этого существующего аккаунта?'))return;
+      button.disabled=true;
+      const oldText=button.textContent;button.textContent='Обрабатываем…';
+      try{
+        const {data,error}=await supabase.functions.invoke('parent-access',{body:{parent_id:parentId,action}});
+        if(error||data?.error)throw Error(data?.error||error.message);
+        if(data.password)parentTemporaryCredentials.set(parentId,data.password);
+        alert(data.message||'Готово');
+        if(action!=='enable_phone'){
+          await renderClassParentEditorReload(classId,root,host);
+        }else{button.disabled=false;button.textContent=oldText;}
+      }catch(err){alert('Ошибка: '+msg(err));button.disabled=false;button.textContent=oldText;}
     });
     host.querySelector('#save-class-parents').onclick=async()=>{
       const btn=host.querySelector('#save-class-parents'),output=host.querySelector('#save-class-parents-result');
@@ -475,7 +508,7 @@ function normalizeKzPhone(value){
 }
 async function renderClassParentEditorReload(classId,root,oldHost){
   oldHost.remove();
-  if(root.isConnected&&state.tab==='class')await renderClassParentEditor(classId,root);
+  if(root.isConnected&&(state.tab==='class'||state.tab==='manage'))await renderClassParentEditor(classId,root);
 }
 function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">OFF</div><div class="h">Очередь готовится, рассылка выключена</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>История публикаций доступна в разделе «Мой класс».</p></div><div id="afs-completion"></div>`;renderClassCompletion();}
 async function renderClassCompletion(){
@@ -581,12 +614,6 @@ async function renderManage(){
       <button class="btn primary" type="submit">Добавить учителя</button><div id="staff-result" class="note" role="status"></div>
       <p class="note">Учётная запись создаётся без пароля. Рассылку приглашений подключим отдельно.</p>
     </form></div>
-    <div class="panel"><h2>Массовое создание преподавателей · пакет №30</h2>
-      <p class="note">Только для суперадминистратора. Сначала установите SQL №30А и Edge Function <code>bulk-staff</code>. Пароли показываются только при первом создании — скачайте CSV и храните его закрыто.</p>
-      <label>Файл преподавателей JSON<input id="bulk-staff-file" type="file" accept=".json,application/json"></label>
-      <button id="bulk-staff-submit" type="button" class="btn primary">Создать аккаунты из файла</button>
-      <div id="bulk-staff-result" class="note" role="status"></div>
-    </div>
     <div class="panel"><h2>Назначить преподавателя</h2><form id="assign-form" class="compose">
       <label>Преподаватель<select id="a-teacher" required>${option(t,x=>x.full_name)}</select></label>
       <div class="grid2"><label>Класс<select id="a-class" required>${option(d.classes,x=>x.name)}</select></label>
@@ -603,74 +630,23 @@ async function renderManage(){
       <label>Название<input id="new-subject-name" required maxlength="100" placeholder="Математика"></label>
       <button class="btn primary" type="submit">Добавить предмет</button><div id="subject-result" class="note" role="status"></div>
     </form></div>
-  </div><div class="panel" style="margin-bottom:16px"><h2>Родители и привязка к ученикам</h2>
-    <div id="parent-directory" class="note">Загружаем карточки родителей…</div>
-    <div class="forms" style="margin-top:12px">
-      <form class="compose" id="parent-create"><h2>Добавить родителя</h2>
-        <label>ФИО<input id="parent-name" required minlength="3" maxlength="160"></label>
-        <label>Email<input id="parent-email" type="email" required></label>
-        <label>Телефон (обязательно)<input id="parent-phone" type="tel" required placeholder="+7 777 123 45 67"></label>
-        <button class="btn primary" type="submit">Сохранить родителя</button>
-        <div id="parent-create-result" class="note" role="status"></div>
-      </form>
-      <form class="compose" id="parent-link"><h2>Привязать к ученику</h2>
-        <label>Родитель<select id="parent-link-parent" required></select></label>
-        <label>Ученик<select id="parent-link-student" required>${option(state.students,x=>x.full_name+' ('+(state.classes.find(c=>c.id===x.class_id)?.name||'?')+')')}</select></label>
-        <button class="btn primary" type="submit">Привязать</button>
-        <div id="parent-link-result" class="note" role="status"></div>
-      </form>
-    </div>
-    <form class="compose" id="parent-invite" style="max-width:560px;margin-top:12px"><h2>Пригласить родителя по email</h2>
-      <p class="note">Сначала добавьте родителя и привяжите к ученику. Для приглашения используйте доступный вам тестовый адрес. Приглашение создаёт аккаунт и отправляет письмо с установкой пароля.</p>
-      <label>Родитель<select id="parent-invite-id" required></select></label>
-      <button class="btn primary" type="submit">Отправить приглашение</button>
-      <div id="parent-invite-result" class="note" role="status"></div>
-    </form>
-    <form class="compose" id="parent-bind" style="max-width:560px;margin-top:12px"><h2>Активировать личный кабинет вручную</h2>
-      <p class="note">Сначала подтвердите личность родителя и создайте ему аккаунт с подтверждённым email в Supabase Authentication. Затем выберите его ниже. Не используйте чужой email без согласия владельца.</p>
-      <label>Родитель<select id="parent-bind-id" required></select></label>
-      <button class="btn ghost" type="submit">Связать с подтверждённым аккаунтом</button>
-      <div id="parent-bind-result" class="note" role="status"></div>
-    </form>
+  </div><div class="panel" style="margin-bottom:16px"><h2>Родители · управление классом</h2>
+    <p class="note">Выберите класс. Все ученики и родители откроются одной таблицей: ФИО, телефон/логин, доступ и временный пароль. Сохранение данных — одной кнопкой. Для второго родителя есть «+ Родитель».</p>
+    <label>Класс<select id="manage-parent-class">${option(d.classes,x=>x.name)}</select></label>
+    <div id="manage-parent-grid"></div>
+    <div id="manage-parents-result" class="note" role="status"></div>
   </div><div class="panel"><h2>Сотрудники и назначения</h2><div class="tw"><table><thead><tr><th>ФИО</th><th>Email</th><th>Роли</th><th>Назначения</th></tr></thead><tbody>
     ${d.staff.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.email||'')}</td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
       const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';const sub=d.subjects.find(z=>z.id===a.subject_id)?.name||'';
       return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
     }).join('; ')||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
-  async function loadParentsAdmin(){
-    const {data,error}=await supabase.rpc('afs_parent_directory');
-    if(error){$('#parent-directory').textContent='Ошибка: '+msg(error);return;}
-    const parents=data||[];
-    $('#parent-directory').innerHTML=parents.length?`<div class="tw"><table><thead><tr><th>ФИО</th><th>Email</th><th>Дети</th><th>Кабинет</th></tr></thead><tbody>${parents.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td><td>${esc((p.student_ids||[]).map(id=>state.students.find(s=>s.id===id)?.full_name||'#'+id).join(', ')||'—')}</td><td>${p.user_id?'Привязан':'Нет аккаунта'}</td></tr>`).join('')}</tbody></table></div>`:'Пока нет родителей.';
-    const opts=parents.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.email)}</option>`).join('');
-    $('#parent-link-parent').innerHTML=opts;$('#parent-bind-id').innerHTML=opts;$('#parent-invite-id').innerHTML=parents.filter(p=>!p.user_id).map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.email)}</option>`).join('');
-  }
-  async function parentRpc(action,payload,outId){
-    const el=$(outId);el.textContent='Сохраняем…';el.className='note';
-    const {data,error}=await supabase.rpc('afs_manage_parents',{p_action:action,p_payload:payload});
-    if(error){el.textContent='Ошибка: '+msg(error);el.className='toast bad';return;}
-    el.textContent=data.message;el.className='toast ok';await loadParentsAdmin();
-  }
-  $('#parent-create').onsubmit=async e=>{e.preventDefault();await parentRpc('add_parent',{full_name:$('#parent-name').value,email:$('#parent-email').value,phone:$('#parent-phone').value},'#parent-create-result');};
-  $('#parent-link').onsubmit=async e=>{e.preventDefault();await parentRpc('link_student',{parent_id:Number($('#parent-link-parent').value),student_id:Number($('#parent-link-student').value)},'#parent-link-result');};
-  $('#parent-invite').onsubmit=async e=>{
-    e.preventDefault();
-    const output=$('#parent-invite-result');const button=e.currentTarget.querySelector('button');
-    const id=Number($('#parent-invite-id').value);
-    if(!id){output.textContent='Выберите родителя без аккаунта';return;}
-    if(!confirm('Отправить приглашение этому тестовому родителю?'))return;
-    button.disabled=true;output.textContent='Отправляем приглашение…';output.className='note';
-    try{
-      const {data,error}=await supabase.functions.invoke('invite-user',{body:{kind:'parent',parent_id:id}});
-      if(error)throw Error(data?.error || error.message || 'Не удалось отправить приглашение');
-      if(!data?.success)throw Error(data?.error || data?.message || 'Сервер не подтвердил отправку');
-      output.textContent='Приглашение отправлено. Проверьте почтовый ящик и папку «Спам».';
-      output.className='toast ok';await loadParentsAdmin();
-    }catch(err){output.textContent='Ошибка: '+msg(err);output.className='toast bad'}
-    finally{button.disabled=false}
+  const classPicker=$('#manage-parent-class');
+  const showParentsForClass=async()=>{
+    const root=$('#manage-parent-grid');root.replaceChildren();
+    await renderClassParentEditor(Number(classPicker.value),root);
   };
-  $('#parent-bind').onsubmit=async e=>{e.preventDefault();await parentRpc('bind_account',{parent_id:Number($('#parent-bind-id').value)},'#parent-bind-result');};
-  await loadParentsAdmin();
+  classPicker.onchange=showParentsForClass;
+  await showParentsForClass();
   const kind=$('#a-type'),sw=$('#a-subject-wrap');
   const sync=()=>{sw.hidden=kind.value==='homeroom';$('#a-subject').required=kind.value!=='homeroom'};
   kind.onchange=sync;sync();
@@ -692,41 +668,6 @@ async function renderManage(){
     teacher_id:$('#a-teacher').value,class_id:Number($('#a-class').value),assignment_type:$('#a-type').value,
     subject_id:$('#a-type').value==='subject_teacher'?Number($('#a-subject').value):null
   }))};
-  $('#bulk-staff-submit').onclick=async()=>{
-    const field=$('#bulk-staff-file'),button=$('#bulk-staff-submit'),output=$('#bulk-staff-result');
-    if(!state.roles.includes('superadmin')){output.textContent='Нужна роль суперадминистратора';return;}
-    if(!field.files?.length){output.textContent='Выберите файл AFS30_преподаватели_для_импорта.json';return;}
-    let entries;
-    try{const parsed=JSON.parse(await field.files[0].text());entries=parsed.staff;
-      if(!Array.isArray(entries)||!entries.length||entries.length>150)throw Error('Некорректное количество сотрудников');
-    }catch(e){output.textContent='Неверный JSON: '+msg(e);return;}
-    if(!confirm(`Создать до ${entries.length} новых аккаунтов преподавателей? Повторные аккаунты будут пропущены.`))return;
-    button.disabled=true;let credentials=[],reviews=[],errorText='';
-    try{
-      for(let start=0;start<entries.length;start+=8){
-        output.textContent=`Обрабатываем ${Math.min(start+8,entries.length)} из ${entries.length}. Новых: ${credentials.length}.`;
-        const {data,error}=await supabase.functions.invoke('bulk-staff',{body:{staff:entries.slice(start,start+8)}});
-        if(error)throw Error(data?.error||error.message||'Ошибка Edge Function');
-        if(!Array.isArray(data?.results))throw Error(data?.error||'Сервер не вернул результаты');
-        for(const item of data.results){if(item.status==='created')credentials.push(item);
-          else reviews.push(item);}
-      }
-    }catch(err){errorText=msg(err)}finally{
-      if(credentials.length){
-        const csv=[['ФИО','Логин (email)','Временный пароль','Ключ импорта'],...credentials.map(x=>[x.full_name,x.login,x.password,x.staff_key])]
-          .map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
-        const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
-        const url=URL.createObjectURL(blob),link=document.createElement('a');
-        link.href=url;link.download='AFS30_новые_логины_пароли.csv';document.body.appendChild(link);link.click();link.remove();
-        setTimeout(()=>URL.revokeObjectURL(url),60000);
-      }
-      output.textContent=`Создано аккаунтов: ${credentials.length}; пропущено/на проверку: ${reviews.length}. `+
-        (errorText?'Ошибка: '+errorText+'. ':'')+(credentials.length?'CSV с временными паролями скачан. ':'')+
-        (reviews.length?'Сверьте пропуски: '+reviews.slice(0,12).map(x=>x.staff_key+' ('+x.status+')').join(', '):'');
-      output.className=errorText?'toast bad':'toast ok';button.disabled=false;
-      if(!errorText)await loadData();
-    }
-  };
   $('#create-teacher').onsubmit=e=>{e.preventDefault();run('#create-teacher','#staff-result',async()=>{
     const {data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw Error('Войдите повторно');
     const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({full_name:$('#teacher-fullname').value.trim(),email:$('#teacher-email').value.trim(),role:'teacher'})});
