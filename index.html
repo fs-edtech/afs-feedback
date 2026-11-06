@@ -130,6 +130,21 @@ td.num,th.num{text-align:right}
 .afs-phonebox{display:flex;align-items:center;gap:5px;border:1px solid #D8DEE6;border-radius:8px;background:white;padding:0 7px;min-width:192px}.afs-prefix{font-weight:700;color:#1B2433;white-space:nowrap}
 .afs-phonebox input{min-width:0!important;width:134px!important;flex:1;border:0!important;box-shadow:none!important;background:transparent!important;padding:9px 0!important}.afs-phone-icon{width:19px;height:19px;flex:none;display:inline-flex}
 
+
+/* AFS #36 staff credentials and editor */
+.afs-staff-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.afs-staff-header .actions{max-width:600px}
+.afs-login{font-size:13px;white-space:nowrap}
+.afs-copy,.afs-issue-button{font:600 12px var(--f-body);color:var(--navy);background:transparent;border:0;cursor:pointer;text-decoration:underline;display:inline-block;margin:3px 5px;padding:4px}
+.afs-credential-cell code{display:inline-block;border-radius:5px;background:var(--sunk);padding:4px 6px;font-size:12px}
+.afs-staff-pencil{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--navy);cursor:pointer}
+.afs-staff-pencil:hover{background:var(--sunk)}
+.afs-staff-dialog{width:min(620px,calc(100vw - 24px));max-height:85vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg);padding:24px;box-shadow:0 15px 55px rgba(0,0,0,.22)}
+.afs-staff-dialog::backdrop{background:rgba(12,21,36,.55)}
+.afs-dialog-close{float:right;border:0;background:transparent;color:var(--fg);font-size:26px;cursor:pointer}
+.afs-assignments,.afs-add-assignment{border:1px solid var(--line);border-radius:9px;padding:12px;display:grid;gap:10px}
+.afs-assignment{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:6px;font-size:13px}
+
 </style>
 
 <header><div class="wrap hrow">
@@ -184,6 +199,7 @@ const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 const parentTemporaryCredentials=new Map(); // Только в памяти вкладки, не localStorage.
+const staffTemporaryCredentials=new Map(); // Только новые пароли этой сессии.
 
 let settingInvitationPassword = isInviteLink;
 function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
@@ -708,6 +724,138 @@ async function reloadStudents(){
   if(error)throw error;state.students=data||[];
 }
 
+
+// AFS #36: staff access + edit. Temporary credentials stay only in this tab's memory.
+async function afsStaffIssue(ids){
+  const all=[];
+  for(let i=0;i<ids.length;i+=8){
+    const {data,error}=await supabase.functions.invoke('staff-access',{body:{user_ids:ids.slice(i,i+8)}});
+    if(error||data?.error){
+      let detail=data?.error||error?.message||'Ошибка функции';
+      if(error?.context&&typeof error.context.json==='function'){
+        try{const body=await error.context.json();detail=body.error||body.message||detail;}catch{}
+      }
+      throw Error(detail);
+    }
+    for(const result of data.results||[]){
+      all.push(result);
+      if(result.password)staffTemporaryCredentials.set(result.user_id,result.password);
+    }
+  }
+  return all;
+}
+function afsDownloadStaffCredentials(items){
+  const csv=[['ФИО','Логин','Новый временный пароль'],...items.filter(x=>x.password).map(x=>[x.full_name,x.login,x.password])]
+    .map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
+  a.download='AFS_временные_пароли_учителей.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+function afsWireStaffManager(d){
+  const root=$('#v-manage');
+  const byId=new Map(d.staff.map(x=>[String(x.id),x]));
+  const labelAssignment=a=>{
+    const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';
+    const sub=d.subjects.find(s=>s.id===a.subject_id)?.name||'';
+    return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+  };
+  root.querySelectorAll('[data-staff-copy-login]').forEach(b=>b.onclick=async()=>{
+    const item=byId.get(b.dataset.staffCopyLogin);if(item)await navigator.clipboard.writeText(item.email||'');
+    b.textContent='Скопировано';
+  });
+  root.querySelectorAll('[data-staff-copy-password]').forEach(b=>b.onclick=async()=>{
+    const value=staffTemporaryCredentials.get(b.dataset.staffCopyPassword);
+    if(value){await navigator.clipboard.writeText(value);b.textContent='Скопировано';}
+  });
+  const status=root.querySelector('#staff-access-result');
+  root.querySelectorAll('[data-staff-issue]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.staffIssue,item=byId.get(id);
+    if(!item||!confirm('Выдать НОВЫЙ временный пароль для '+item.full_name+'? Старый пароль перестанет работать.'))return;
+    b.disabled=true;status.textContent='Устанавливаем новый пароль…';
+    try{
+      const result=await afsStaffIssue([id]);
+      if(result[0]?.error)throw Error(result[0].error);
+      const password=result[0]?.password;
+      status.className='toast ok';status.textContent='Новый пароль выдан для '+item.full_name+'. Скопируйте его из таблицы.';
+      const cell=b.closest('td');cell.innerHTML='<code>'+esc(password)+'</code><button type="button" class="afs-copy" data-copy-new="">Копировать</button><button type="button" class="afs-issue-button">Выдать новый</button>';
+      cell.querySelector('[data-copy-new]').onclick=async()=>{await navigator.clipboard.writeText(password);cell.querySelector('[data-copy-new]').textContent='Скопировано';};
+      cell.querySelector('.afs-issue-button').onclick=()=>{renderManage();};
+    }catch(e){status.className='toast bad';status.textContent='Ошибка: '+msg(e);b.disabled=false;}
+  });
+  async function massIssue(mode){
+    const eligible=d.staff.filter(x=>x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r)));
+    const homeroom=new Set(d.assignments.filter(a=>a.assignment_type==='homeroom').map(a=>a.user_id));
+    const chosen=mode==='homeroom'?eligible.filter(x=>homeroom.has(x.id)):eligible;
+    if(!chosen.length){status.textContent='Подходящие сотрудники не найдены';return;}
+    if(!confirm('Вы действительно хотите установить НОВЫЕ временные пароли для '+chosen.length+' сотрудников? Их прежние пароли перестанут работать. После этого CSV с новыми паролями будет загружен на ваш компьютер.'))return;
+    const buttons=[root.querySelector('#staff-issue-homeroom'),root.querySelector('#staff-issue-all')];buttons.forEach(b=>b.disabled=true);
+    let items=[];status.className='note';status.textContent='Обновляем пароли '+chosen.length+' сотрудников…';
+    try{
+      // Deliberate per-batch calls; successful batches are preserved if a later batch fails.
+      for(let i=0;i<chosen.length;i+=8){
+        const part=await afsStaffIssue(chosen.slice(i,i+8).map(x=>x.id));items.push(...part);
+        status.textContent='Обработано '+Math.min(i+8,chosen.length)+' из '+chosen.length;
+      }
+      afsDownloadStaffCredentials(items);
+      const success=items.filter(x=>x.password).length;
+      const failed=items.filter(x=>x.error);
+      status.className=failed.length?'toast bad':'toast ok';
+      status.textContent='Выдано '+success+' новых паролей, ошибок: '+failed.length+'. CSV скачан. Храните его в защищённом месте.';
+      if(failed.length)status.textContent+=' Ошибки: '+failed.map(x=>byId.get(x.user_id)?.full_name+': '+x.error).join('; ');
+      // Show new passwords in their current rows; no new network calls.
+      for(const item of items.filter(x=>x.password)){
+        const b=root.querySelector('[data-staff-issue="'+item.user_id+'"]');
+        if(!b)continue;
+        const cell=b.closest('td');
+        cell.querySelector('.note')?.remove();
+        cell.insertAdjacentHTML('afterbegin','<code>'+esc(item.password)+'</code><button type="button" class="afs-copy" data-copy-mass="'+esc(item.user_id)+'">Копировать</button>');
+      }
+      root.querySelectorAll('[data-copy-mass]').forEach(b=>b.onclick=async()=>{await navigator.clipboard.writeText(staffTemporaryCredentials.get(b.dataset.copyMass)||'');b.textContent='Скопировано';});
+    }catch(e){
+      if(items.length)afsDownloadStaffCredentials(items);
+      status.className='toast bad';status.textContent='Прервано: '+msg(e)+'. Успешно обновлённые пароли выгружены в CSV.';
+    }finally{buttons.forEach(b=>b.disabled=false);}
+  }
+  if(root.querySelector('#staff-issue-homeroom'))root.querySelector('#staff-issue-homeroom').onclick=()=>massIssue('homeroom');
+  if(root.querySelector('#staff-issue-all'))root.querySelector('#staff-issue-all').onclick=()=>massIssue('all');
+  const dialog=root.querySelector('#afs-staff-dialog'),body=root.querySelector('#afs-staff-dialog-body');
+  root.querySelectorAll('[data-staff-edit]').forEach(btn=>btn.onclick=()=>{
+    const staff=byId.get(btn.dataset.staffEdit);if(!staff)return;
+    const assignments=d.assignments.filter(a=>a.user_id===staff.id);
+    body.innerHTML=`<div class="compose"><label>ФИО сотрудника<input id="afs-edit-name" maxlength="160" value="${esc(staff.full_name)}"></label>
+      <label>Логин (изменение отключено)<input value="${esc(staff.email||'')}" readonly></label>
+      <div class="note">Роли: ${esc((staff.roles||[]).join(', '))}. Роли безопасности здесь не изменяются.</div>
+      <div class="afs-assignments"><b>Назначения</b>${assignments.length?assignments.map(a=>`<div class="afs-assignment"><span>${esc(labelAssignment(a))}</span><button type="button" class="btn ghost" data-remove-assignment="${a.id}">Снять</button></div>`).join(''):'<p class="note">Назначений нет</p>'}</div>
+      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment"><b>Добавить назначение</b><label>Класс<select id="afs-edit-class">${d.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+      <label>Тип<select id="afs-edit-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label>
+      <label id="afs-edit-subject-wrap">Предмет<select id="afs-edit-subject">${d.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+      <button type="button" class="btn ghost" id="afs-edit-add-assignment">Добавить назначение</button></div>`:''}
+      <button type="button" class="btn primary" id="afs-edit-save-name">Сохранить ФИО</button><div class="note" id="afs-edit-status" role="status"></div></div>`;
+    const out=body.querySelector('#afs-edit-status');
+    async function run(call){out.className='note';out.textContent='Сохраняем…';try{await call();dialog.close();await renderManage();}catch(e){out.className='toast bad';out.textContent='Ошибка: '+msg(e);}}
+    body.querySelector('#afs-edit-save-name').onclick=()=>run(async()=>{
+      const full_name=body.querySelector('#afs-edit-name').value.trim();
+      if(full_name.length<5)throw Error('Укажите ФИО полностью');
+      const {error}=await supabase.rpc('afs_staff_edit',{p_action:'rename',p_payload:{user_id:staff.id,full_name}});if(error)throw error;
+    });
+    body.querySelectorAll('[data-remove-assignment]').forEach(b=>b.onclick=()=>{
+      const assignment=assignments.find(a=>String(a.id)===b.dataset.removeAssignment);
+      if(!assignment||!confirm('Снять назначение: '+labelAssignment(assignment)+'?'))return;
+      run(async()=>{const {error}=await supabase.rpc('afs_staff_edit',{p_action:'remove_assignment',p_payload:{assignment_id:assignment.id}});if(error)throw error;});
+    });
+    const type=body.querySelector('#afs-edit-type');
+    if(type){
+      const update=()=>body.querySelector('#afs-edit-subject-wrap').hidden=type.value==='homeroom';
+      type.onchange=update;update();
+      body.querySelector('#afs-edit-add-assignment').onclick=()=>run(async()=>{
+        const payload={teacher_id:staff.id,class_id:Number(body.querySelector('#afs-edit-class').value),assignment_type:type.value,subject_id:type.value==='homeroom'?null:Number(body.querySelector('#afs-edit-subject').value)};
+        const {error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});if(error)throw error;
+      });
+    }
+    dialog.showModal();
+  });
+}
+
 // School management: server-authorized RPCs; no service keys in this file.
 async function refreshManageData(){
   const [{data:staff,error:e1},{data:classes,error:e2},{data:subjects,error:e3},{data:assignments,error:e4}]=await Promise.all([
@@ -764,11 +912,17 @@ async function renderManage(){
     <label>Класс<select id="manage-parent-class">${option(d.classes,x=>x.name)}</select></label>
     <div id="manage-parent-grid"></div>
     <div id="manage-parents-result" class="note" role="status"></div>
-  </div><div class="panel"><h2>Сотрудники и назначения</h2><div class="tw"><table><thead><tr><th>ФИО</th><th>Email</th><th>Роли</th><th>Назначения</th></tr></thead><tbody>
-    ${d.staff.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.email||'')}</td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
+  </div><div class="panel"><div class="afs-staff-header"><div><h2>Сотрудники и назначения</h2><p class="note">Логины уже созданы. Существующие пароли не отображаются. Новый временный пароль заменяет предыдущий и показывается только после выдачи.</p></div><div class="actions">${state.roles.includes('superadmin')?'<button type="button" id="staff-issue-homeroom" class="btn ghost">Выдать пароли классным руководителям</button><button type="button" id="staff-issue-all" class="btn ghost">Выдать всем учителям</button>':''}</div></div>
+    <div id="staff-access-result" class="note" role="status"></div>
+    <div class="tw"><table><thead><tr><th>ФИО</th><th>Логин (email)</th><th>Роли</th><th>Назначения</th><th>Временный пароль</th><th></th></tr></thead><tbody>
+    ${d.staff.map(x=>`<tr><td><b>${esc(x.full_name)}</b></td><td><span class="afs-login">${esc(x.email||'—')}</span><button type="button" class="afs-copy" data-staff-copy-login="${esc(x.id)}" title="Скопировать логин">Копировать</button></td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
       const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';const sub=d.subjects.find(z=>z.id===a.subject_id)?.name||'';
       return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
-    }).join('; ')||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
+    }).join('; ')||'—')}</td>
+    <td class="afs-credential-cell">${staffTemporaryCredentials.has(x.id)?`<code>${esc(staffTemporaryCredentials.get(x.id))}</code><button type="button" class="afs-copy" data-staff-copy-password="${esc(x.id)}">Копировать</button>`:'<span class="note">Не выдавался в этой сессии</span>'}
+    ${state.roles.includes('superadmin')&&x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r))?`<button type="button" class="afs-issue-button" data-staff-issue="${esc(x.id)}">Выдать новый</button>`:''}</td>
+    <td>${state.roles.includes('superadmin')?`<button type="button" class="afs-staff-pencil" data-staff-edit="${esc(x.id)}" title="Редактировать сотрудника" aria-label="Редактировать сотрудника">${afsPencilSvg}</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
+    <dialog id="afs-staff-dialog" class="afs-staff-dialog"><form method="dialog"><button class="afs-dialog-close" aria-label="Закрыть">×</button></form><h2>Редактировать сотрудника</h2><div id="afs-staff-dialog-body"></div></dialog>`;
   const classPicker=$('#manage-parent-class');
   const showParentsForClass=async()=>{
     const root=$('#manage-parent-grid');root.replaceChildren();
@@ -776,6 +930,7 @@ async function renderManage(){
   };
   classPicker.onchange=showParentsForClass;
   await showParentsForClass();
+  afsWireStaffManager(d);
   const kind=$('#a-type'),sw=$('#a-subject-wrap');
   const sync=()=>{sw.hidden=kind.value==='homeroom';$('#a-subject').required=kind.value!=='homeroom'};
   kind.onchange=sync;sync();
