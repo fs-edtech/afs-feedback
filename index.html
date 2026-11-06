@@ -122,6 +122,14 @@ td.num,th.num{text-align:right}
 .fgrid .full{grid-column:1/-1}
 .del{border:0;background:none;color:var(--bad);font:600 13px var(--f-body);cursor:pointer;padding:4px}
 @media (prefers-reduced-motion:no-preference){.toast{animation:fade .25s ease}@keyframes fade{from{opacity:.3}to{opacity:1}}}
+
+/* #34: compact parent editor */
+.afs-namecell{display:flex;align-items:center;gap:5px}.afs-namecell b{overflow-wrap:anywhere}
+.afs-pencil{display:inline-flex;align-items:center;justify-content:center;flex:none;width:27px;height:27px;border:1px solid transparent;border-radius:7px;background:transparent;color:#1F3A5F;cursor:pointer}.afs-pencil:hover,.afs-pencil:focus-visible{background:#EDF0F4;border-color:#D8DEE6}
+.afs-namecell input[readonly]{border:0;background:transparent;box-shadow:none;padding:7px 0;cursor:default}
+.afs-phonebox{display:flex;align-items:center;gap:5px;border:1px solid #D8DEE6;border-radius:8px;background:white;padding:0 7px;min-width:192px}.afs-prefix{font-weight:700;color:#1B2433;white-space:nowrap}
+.afs-phonebox input{min-width:0!important;width:134px!important;flex:1;border:0!important;box-shadow:none!important;background:transparent!important;padding:9px 0!important}.afs-phone-icon{width:19px;height:19px;flex:none;display:inline-flex}
+
 </style>
 
 <header><div class="wrap hrow">
@@ -437,8 +445,9 @@ async function renderClassParentEditor(classId,root){
   if(error){host.innerHTML=`<div class="toast bad">Не удалось открыть таблицу родителей: ${esc(msg(error))}. Выполните SQL №29.</div>`;return;}
   const students=data?.students||[];
   const lines=[];
+  const pendingStudentNames=new Map();
   for(const s of students){
-    if(s.parents?.length){for(const p of s.parents)lines.push({student_id:s.student_id,student_name:s.student_name,parent_id:p.parent_id,parent_name:p.parent_name||'',phone:p.phone||'',opt_in:!!p.whatsapp_opt_in,has_account:!!p.has_account});}
+    if(s.parents?.length){for(const p of s.parents)lines.push({student_id:s.student_id,student_name:s.student_name,parent_id:p.parent_id,parent_name:p.parent_name||'',initial_parent_name:p.parent_name||'',phone:p.phone||'',opt_in:!!p.whatsapp_opt_in,has_account:!!p.has_account});}
     else lines.push({student_id:s.student_id,student_name:s.student_name,parent_id:null,parent_name:'',phone:'',opt_in:false,has_account:false});
   }
   const draw=()=>{
@@ -446,16 +455,15 @@ async function renderClassParentEditor(classId,root){
     const percent=students.length?Math.round(complete*100/students.length):0;
     host.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>Родители и телефоны класса</h2><span class="pill ${percent===100?'ok':''}">${percent}% · ${complete} из ${students.length}</span></div>
       <p class="note">Заполните строки класса, затем один раз нажмите «Сохранить изменения». Для второго родителя используйте кнопку «+ Родитель». Номер телефона служит логином. Новый временный пароль появится только после выдачи доступа или сброса. Текущий пароль посмотреть нельзя.</p>
-      <div class="tw"><table><thead><tr><th>Ученик</th><th>ФИО родителя</th><th>Телефон / логин</th><th>Доступ и временный пароль</th><th>WhatsApp: согласие получено</th><th></th></tr></thead><tbody>
-      ${lines.map((r,i)=>`<tr><td style="min-width:155px"><b>${esc(r.student_name)}</b></td>
-        <td><input style="min-width:165px" data-row="${i}" data-field="parent_name" value="${esc(r.parent_name)}" placeholder="ФИО родителя" maxlength="160"></td>
-        <td><input style="min-width:160px" data-row="${i}" data-field="phone" type="tel" value="${esc(r.phone)}" placeholder="+7 777 123 45 67"></td>
+      <div class="tw"><table><thead><tr><th>Ученик</th><th>ФИО родителя</th><th>Телефон / логин</th><th>Доступ и временный пароль</th><th></th></tr></thead><tbody>
+      ${lines.map((r,i)=>`<tr><td style="min-width:155px"><div class="afs-namecell"><b>${esc(r.student_name)}</b><button type="button" class="afs-pencil" data-edit-student-inline="${i}" title="Редактировать ФИО ученика" aria-label="Редактировать ФИО ученика">${afsPencilSvg}</button></div></td>
+        <td><div class="afs-namecell"><input style="min-width:155px" data-row="${i}" data-field="parent_name" value="${esc(r.parent_name)}" placeholder="ФИО родителя" maxlength="160" ${r.parent_id?"readonly":""}><button type="button" class="afs-pencil" data-edit-parent-inline="${i}" title="Редактировать ФИО родителя" aria-label="Редактировать ФИО родителя">${afsPencilSvg}</button></div></td>
+        <td><div class="afs-phonebox"><span class="afs-prefix">+7</span><input data-row="${i}" data-field="phone" type="tel" inputmode="numeric" autocomplete="off" value="${esc(afsDisplayLocalPhone(r.phone))}" placeholder="XXX XXX XX XX"><span class="afs-phone-icon" data-phone-check="${i}"></span></div></td>
         <td style="min-width:185px"><span class="note">${r.has_account?'Аккаунт существует':'Нет аккаунта'}</span>
           ${r.parent_id?(r.has_account?(state.roles.some(x=>x==='superadmin'||x==='deputy')?`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="reset">Сбросить пароль</button><button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="enable_phone">Вход по телефону</button>`:''):`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="create">Выдать доступ</button>`):'<span class="note">Сначала сохраните строку</span>'}
           ${parentTemporaryCredentials.has(r.parent_id)?`<div class="toast ok">Новый пароль: <b>${esc(parentTemporaryCredentials.get(r.parent_id))}</b></div>`:''}</td>
-        <td><input type="checkbox" data-row="${i}" data-field="opt_in" ${r.opt_in?'checked':''} title="Установите только при наличии согласия родителя"></td>
         <td><button class="btn ghost" type="button" data-add-parent="${r.student_id}" title="Добавить строку для второго родителя">+ Родитель</button></td></tr>`).join('')}</tbody></table></div>
-      <p class="note">Отметка WhatsApp означает, что сотрудник подтвердил наличие согласия родителя. Без неё сообщения не ставятся в очередь. Сохранение таблицы не меняет пароли и не отправляет WhatsApp. Доступ выдаётся отдельной кнопкой, существующие аккаунты не пересоздаются.</p>
+      <p class="note">Сохранять можно постепенно: пустые номера разрешены. Согласие на WhatsApp учитывается отдельно; сохранение таблицы не меняет пароли и не отправляет сообщения.</p>
       <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
         <button type="button" id="save-class-parents" class="btn primary">Сохранить изменения по классу</button>
         ${parentTemporaryCredentials.size?'<button type="button" id="download-parent-passwords" class="btn ghost">Скачать выданные временные пароли (CSV)</button>':''}
@@ -469,8 +477,35 @@ async function renderClassParentEditor(classId,root){
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='AFS_родители_временные_пароли.csv';a.click();
       setTimeout(()=>URL.revokeObjectURL(url),3000);
     };
-    host.querySelectorAll('[data-field]').forEach(input=>input.addEventListener('input',()=>{const r=lines[Number(input.dataset.row)];r[input.dataset.field]=input.type==='checkbox'?input.checked:input.value;}));
-    host.querySelectorAll('[data-field="opt_in"]').forEach(x=>x.addEventListener('change',()=>{lines[Number(x.dataset.row)].opt_in=x.checked;}));
+    host.querySelectorAll('[data-field]').forEach(input=>input.addEventListener('input',()=>{
+      const r=lines[Number(input.dataset.row)];
+      if(input.dataset.field==='phone'){
+        r.phone=afsNormalizeTyping(input.value);input.value=afsDisplayLocalPhone(r.phone);
+        afsSetPhoneIcon(host,Number(input.dataset.row),r.phone);
+      }else r[input.dataset.field]=input.value;
+    }));
+    host.querySelectorAll('[data-field="phone"]').forEach(input=>{
+      afsSetPhoneIcon(host,Number(input.dataset.row),lines[Number(input.dataset.row)].phone);
+      input.addEventListener('paste',event=>{
+        const value=event.clipboardData?.getData('text')||'',d=value.replace(/\D/g,'');
+        if(d.length===10||(d.length===11&&/^[78]/.test(d))){
+          event.preventDefault();const row=Number(input.dataset.row);
+          lines[row].phone=afsNormalizeTyping(value);input.value=afsDisplayLocalPhone(lines[row].phone);
+          afsSetPhoneIcon(host,row,lines[row].phone);
+        }
+      });
+    });
+    host.querySelectorAll('[data-edit-parent-inline]').forEach(btn=>btn.onclick=()=>{
+      const input=host.querySelector('[data-row="'+btn.dataset.editParentInline+'"][data-field="parent_name"]');
+      input.readOnly=!input.readOnly;if(!input.readOnly)input.focus();
+    });
+    host.querySelectorAll('[data-edit-student-inline]').forEach(btn=>btn.onclick=()=>{
+      const row=lines[Number(btn.dataset.editStudentInline)];const newName=prompt('Исправьте ФИО ученика:',row.student_name);
+      if(newName===null||newName.trim()===row.student_name)return;
+      if(newName.trim().length<3){alert('Введите корректное ФИО');return;}
+      pendingStudentNames.set(row.student_id,newName.trim());
+      lines.filter(x=>x.student_id===row.student_id).forEach(x=>x.student_name=newName.trim());draw();
+    });
     host.querySelectorAll('[data-add-parent]').forEach(button=>button.onclick=()=>{
       // Сначала собираем введённые значения, потом перерисовываем строки.
       host.querySelectorAll('[data-field]').forEach(el=>{lines[Number(el.dataset.row)][el.dataset.field]=el.type==='checkbox'?el.checked:el.value;});
@@ -496,20 +531,42 @@ async function renderClassParentEditor(classId,root){
     });
     host.querySelector('#save-class-parents').onclick=async()=>{
       const btn=host.querySelector('#save-class-parents'),output=host.querySelector('#save-class-parents-result');
-      const payload=lines.filter(r=>r.parent_id||r.parent_name.trim()||r.phone.trim()).map(r=>({student_id:r.student_id,parent_id:r.parent_id,parent_name:r.parent_name.trim(),phone:r.phone.trim(),whatsapp_opt_in:r.opt_in}));
-      for(const row of payload){if(!row.parent_name||!/^\+7[0-9]{10}$/.test(normalizeKzPhone(row.phone))){output.textContent='Заполните ФИО и номер в формате +7XXXXXXXXXX для каждой непустой строки.';output.className='toast bad';return;}}
+      const partial=lines.find(r=>r.phone&&afsLocalDigits(r.phone).length!==10);
+      if(partial){output.textContent='Проверьте номер родителя «'+(partial.parent_name||partial.student_name)+'»: должно быть 10 цифр после +7. Или очистите поле.';output.className='toast bad';return;}
+      const noName=lines.find(r=>afsLocalDigits(r.phone).length===10&&!r.parent_name.trim());
+      if(noName){output.textContent='Для заполненного номера укажите ФИО родителя.';output.className='toast bad';return;}
+      const payload=lines.filter(r=>r.parent_name.trim()&&afsLocalDigits(r.phone).length===10).map(r=>({student_id:r.student_id,parent_id:r.parent_id,parent_name:r.parent_name.trim(),phone:normalizeKzPhone(r.phone),whatsapp_opt_in:r.opt_in}));
       btn.disabled=true;output.textContent='Сохраняем весь класс…';output.className='note';
-      const {data:result,error:saveError}=await supabase.rpc('afs_save_class_parents',{p_class_id:classId,p_rows:payload});
-      if(saveError){output.textContent='Ошибка: '+msg(saveError);output.className='toast bad';btn.disabled=false;return;}
-      output.textContent=`Сохранено строк: ${result.saved}. Данные записаны в базу.`;output.className='toast ok';
+      let result={saved:0};
+      if(payload.length){const save=await supabase.rpc('afs_save_class_parents',{p_class_id:classId,p_rows:payload});
+        if(save.error){output.textContent='Ошибка: '+msg(save.error);output.className='toast bad';btn.disabled=false;return;}result=save.data||result;}
+      for(const [student_id,full_name] of pendingStudentNames){
+        const {error}=await supabase.rpc('afs_manage_students',{p_action:'update_student',p_payload:{student_id,full_name,class_id:classId}});
+        if(error){output.textContent='Телефоны сохранены, но ФИО ученика не изменено: '+msg(error);output.className='toast bad';btn.disabled=false;return;}
+      }
+      const renamed=new Map(lines.filter(r=>r.parent_id&&r.parent_name.trim()!==r.initial_parent_name.trim()).map(r=>[r.parent_id,r.parent_name.trim()]));
+      for(const [parentId,full_name] of renamed){
+        if(full_name.length<3){output.textContent='ФИО родителя слишком короткое';output.className='toast bad';btn.disabled=false;return;}
+        const {data,error}=await supabase.from('parents').update({full_name}).eq('id',parentId).select('id');
+        if(error||!data?.length){output.textContent='Телефоны сохранены, но ФИО родителя не изменено: '+(error?msg(error):'нет прав на изменение карточки');output.className='toast bad';btn.disabled=false;return;}
+      }
+      await reloadStudents();
+      output.textContent='Сохранено строк: '+result.saved+'. Пустые номера пропущены.';output.className='toast ok';
       // Обновить только таблицу, без сброса отзывов и вкладки.
       await renderClassParentEditorReload(classId,root,host);
       const updated=root.querySelector('#save-class-parents-result');
-      if(updated){updated.textContent=`Сохранено ${result.saved} строк. Данные записаны в базу.`;updated.className='toast ok';}
+      if(updated){updated.textContent=`Сохранено ${result.saved||0} заполненных строк. Остальные номера можно добавить позднее.`;updated.className='toast ok';}
     };
   };
   draw();
 }
+
+const afsPencilSvg='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>';
+function afsLocalDigits(value){const d=String(value||'').replace(/\D/g,'');return d.length===11&&/^[78]/.test(d)?d.slice(1):d.slice(0,10);}
+function afsDisplayLocalPhone(value){const d=afsLocalDigits(value);return d.slice(0,3)+(d.length>3?' '+d.slice(3,6):'')+(d.length>6?' '+d.slice(6,8):'')+(d.length>8?' '+d.slice(8,10):'');}
+function afsNormalizeTyping(value){const d=String(value||'').replace(/\D/g,'');const local=d.length>=11&&/^[78]/.test(d)?d.slice(1,11):d.slice(0,10);return local?'+7'+local:'';}
+function afsSetPhoneIcon(root,row,value){const el=root.querySelector('[data-phone-check="'+row+'"]');if(!el)return;const n=afsLocalDigits(value).length,ok=n===10;const color=n===0?'#9CA3AF':ok?'#2E7D4F':'#B3322B';const inner=n===0?'':ok?'<path d="m8 12 2.5 2.5 5-5"/>':'<path d="m9 9 6 6m0-6-6 6"/>';el.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/>'+inner+'</svg>';}
+
 function normalizeKzPhone(value){
   const d=String(value||'').replace(/\D/g,'');
   if(/^8\d{10}$/.test(d))return '+7'+d.slice(1);
