@@ -145,6 +145,32 @@ td.num,th.num{text-align:right}
 .afs-assignments,.afs-add-assignment{border:1px solid var(--line);border-radius:9px;padding:12px;display:grid;gap:10px}
 .afs-assignment{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:6px;font-size:13px}
 
+
+/* AFS #37: unified teacher panel */
+.afs-panel-head{margin-bottom:14px}.afs-panel-tools{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.afs-panel-select{max-width:200px;min-width:120px;flex:0 1 190px}
+.afs-panel-select select{width:100%}
+.afs-parents-collapse{margin:0 0 16px;padding:0;overflow:hidden}
+.afs-parents-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;cursor:pointer;list-style:none;padding:14px}
+.afs-parents-summary::-webkit-details-marker{display:none}
+.afs-parents-title{font-weight:700;flex:1;min-width:200px;color:var(--navy)}
+.afs-parents-completion{font-weight:600;color:var(--muted);font-size:13px}
+.afs-chevron{display:inline-block;margin-left:5px;transition:transform .2s}
+.afs-parents-collapse[open] .afs-chevron{transform:rotate(180deg)}
+.afs-parent-bar{height:7px;flex-basis:100%;background:var(--sunk);border-radius:100px;overflow:hidden}
+.afs-parent-bar i{display:block;background:var(--fill);height:100%;border-radius:100px}
+#afs-panel-parents-body{padding:0 14px 14px}
+#afs-panel-parents-body>.panel{border:0;padding:4px 0;margin:0!important}
+.afs-panel-metrics{margin:0 0 16px}
+.afs-history-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.afs-history-filters{display:flex;gap:5px;flex-wrap:wrap}
+.afs-history-filters .chipbtn{border-radius:8px}
+.afs-review{border:1px solid var(--line);border-radius:9px;margin:8px 0;padding:10px 12px}
+.afs-review>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px;list-style:none}
+.afs-review>summary::-webkit-details-marker{display:none}
+.afs-review>summary>span:nth-child(2){color:var(--muted);font-size:12px;flex:1;min-width:160px}
+.afs-review .layer{margin-top:9px}
+
 </style>
 
 <header><div class="wrap hrow">
@@ -196,7 +222,7 @@ const isInviteLink = inviteLinkType === 'invite' || inviteLinkType === 'recovery
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{detectSessionInUrl:true}});
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null, tab:'send',busy:false};
+let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null,panelClass:null, tab:'send',busy:false};
 const msg = (e)=>e?.message||'Неизвестная ошибка';
 const parentTemporaryCredentials=new Map(); // Только в памяти вкладки, не localStorage.
 const staffTemporaryCredentials=new Map(); // Только новые пароли этой сессии.
@@ -277,6 +303,10 @@ async function loadData(){
   $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>a.assignment_type==='homeroom'));
   if(state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher')){state.tab='parent';}
   $('#tab-manage').hidden=!isAdmin;
+  // For teachers, only Send + Panel. Admin roster remains for student import.
+  $('#tab-class').hidden=true;
+  $('#tab-roster').hidden=!isAdmin;
+  if(state.tab==='class'||(state.tab==='roster'&&!isAdmin))state.tab='panel';
   for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
   if(!isAdmin && state.tab==='manage')state.tab='send';
   for(const section of ['send','panel','class','roster','manage','parent']){
@@ -620,6 +650,7 @@ async function renderClassParentEditor(classId,root){
       await renderClassParentEditorReload(classId,root,host);
       const updated=root.querySelector('#save-class-parents-result');
       if(updated){updated.textContent=`Сохранено ${result.saved||0} заполненных строк. Остальные номера можно добавить позднее.`;updated.className='toast ok';}
+      if(state.tab==='panel')root.dispatchEvent(new Event('afs-parent-grid-saved',{bubbles:true}));
     };
   };
   draw();
@@ -653,9 +684,114 @@ function normalizeKzPhone(value){
 }
 async function renderClassParentEditorReload(classId,root,oldHost){
   oldHost.remove();
-  if(root.isConnected&&(state.tab==='class'||state.tab==='manage'))await renderClassParentEditor(classId,root);
+  if(root.isConnected&&(state.tab==='class'||state.tab==='manage'||state.tab==='panel'))await renderClassParentEditor(classId,root);
 }
-function renderPanel(){const n=state.students.length;const published=state.feedback.filter(f=>f.status==='published');const unique=new Set(published.map(f=>f.student_id));$('#v-panel').innerHTML=`<div class="tiles"><div class="tile"><div class="k">Учеников в доступных классах</div><div class="v">${n}</div></div><div class="tile"><div class="k">Есть хотя бы один опубликованный отзыв</div><div class="v">${unique.size}</div><div class="h">Не показатель охвата за 7 дней</div></div><div class="tile"><div class="k">Опубликовано записей</div><div class="v">${published.length}</div></div><div class="tile"><div class="k">WhatsApp</div><div class="v">OFF</div><div class="h">Очередь готовится, рассылка выключена</div></div></div><div class="panel"><h2>Панель — тестовый режим</h2><p>История публикаций доступна в разделе «Мой класс».</p></div><div id="afs-completion"></div>`;renderClassCompletion();}
+// AFS #37: compact teacher Panel. No changes to Send or administrative Manage.
+function renderPanel(){
+  const root=$('#v-panel');
+  const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
+  const allowed=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  // Keep panel's selection independent from the Send tab's class selection.
+  if(!allowed.length){root.innerHTML='<div class="panel"><h2>Мои классы</h2><p class="note">Классное руководство пока не назначено. Если это ошибка, обратитесь к завучу.</p></div>';return;}
+  if(!allowed.some(c=>c.id===state.panelClass))state.panelClass=allowed[0].id;
+  const classId=state.panelClass;
+  const pupils=state.students.filter(s=>s.class_id===classId).sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'));
+  const byStudent=new Map(pupils.map(p=>[p.id,p]));
+  const feedback=state.staffFeed.filter(f=>Number(f.class_id)===classId && (f.status===undefined||f.status==='published'))
+    .sort((a,b)=>new Date(b.published_at||b.created_at)-new Date(a.published_at||a.created_at));
+  const weekAgo=Date.now()-7*24*60*60*1000;
+  const recent=feedback.filter(f=>new Date(f.published_at||f.created_at).getTime()>=weekAgo).length;
+  const confirmed=feedback.filter(f=>Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total)).length;
+  root.innerHTML=`<div class="panel afs-panel-head"><h2>Мои классы</h2>
+      <div class="afs-panel-tools"><label class="afs-panel-select">Класс
+        <select id="afs-panel-class">${allowed.map(c=>`<option value="${c.id}" ${c.id===classId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      </label><button type="button" class="btn ghost" id="afs-export-class">Скачать список класса</button></div></div>
+    <details class="panel afs-parents-collapse" id="afs-parents-collapse"><summary class="afs-parents-summary">
+      <span class="afs-parents-title">Родители и телефоны класса <span class="afs-chevron" aria-hidden="true">▾</span></span>
+      <span class="afs-parents-completion" id="afs-parents-completion">Загружаем…</span>
+      <span class="afs-parent-bar"><i id="afs-parents-bar" style="width:0%"></i></span>
+    </summary><div id="afs-panel-parents-body"><p class="note">Загружаем…</p></div></details>
+    <div class="tiles afs-panel-metrics">
+      <div class="tile"><div class="k">Учеников</div><div class="v">${pupils.length}</div><div class="h">В выбранном классе</div></div>
+      <div class="tile"><div class="k">Отзывов за 7 дней</div><div class="v">${recent}</div><div class="h">Опубликовано за последние 7 дней</div></div>
+      <div class="tile"><div class="k">Ознакомлено</div><div class="v">${confirmed}</div><div class="h">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
+      <div class="tile"><div class="k">WhatsApp · заполненность</div><div class="v" id="afs-phone-percent">—</div><div class="h" id="afs-phone-count">Телефоны родителей</div></div>
+    </div>
+    <div class="panel"><div class="afs-history-head"><h2>История отзывов</h2>
+      <div class="afs-history-filters" role="group" aria-label="Фильтр отзывов">
+        <button class="chipbtn" data-afs-filter="all" aria-pressed="true">Все</button>
+        <button class="chipbtn" data-afs-filter="read" aria-pressed="false">Ознакомлены</button>
+        <button class="chipbtn" data-afs-filter="waiting" aria-pressed="false">Ожидают</button>
+      </div></div>
+      <p class="note">Новые отзывы выше старых. Откройте отзыв, чтобы увидеть содержание и подтверждения родителей.</p>
+      <div id="afs-history-list"></div>
+    </div>`;
+  const selector=root.querySelector('#afs-panel-class');
+  selector.onchange=()=>{state.panelClass=Number(selector.value);renderPanel()};
+  root.querySelector('#afs-export-class').onclick=async()=>{
+    const button=root.querySelector('#afs-export-class');button.disabled=true;
+    try{
+      const data=[['№','ФИО ученика','Класс'],...pupils.map((s,i)=>[i+1,s.full_name,allowed.find(c=>c.id===classId)?.name||''])];
+      const lib=await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      const wb=lib.utils.book_new();const ws=lib.utils.aoa_to_sheet(data);
+      ws['!cols']=[{wch:6},{wch:48},{wch:12}];lib.utils.book_append_sheet(wb,ws,'Ученики');
+      lib.writeFile(wb,'AFS_ученики_'+(allowed.find(c=>c.id===classId)?.name||classId)+'.xlsx');
+    }catch(err){
+      // A CSV fallback still opens in Excel when CDN is inaccessible.
+      const cols=[['№','ФИО ученика','Класс'],...pupils.map((s,i)=>[i+1,s.full_name,allowed.find(c=>c.id===classId)?.name||''])];
+      const csv='\ufeff'+cols.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('\r\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download='AFS_ученики_'+(allowed.find(c=>c.id===classId)?.name||classId)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+    }finally{if(button.isConnected)button.disabled=false;}
+  };
+  const list=root.querySelector('#afs-history-list');
+  function showHistory(filter){
+    const selected=feedback.filter(f=>{
+      const read=Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total);
+      return filter==='all'||(filter==='read'&&read)||(filter==='waiting'&&!read);
+    });
+    if(!selected.length){list.innerHTML='<div class="empty">Отзывов в этой категории пока нет.</div>';return;}
+    list.innerHTML=selected.map(f=>{
+      const student=byStudent.get(Number(f.student_id));
+      const subj=state.subjects.find(x=>Number(x.id)===Number(f.subject_id))?.name||'Предмет';
+      const date=f.published_at||f.created_at;
+      return `<details class="afs-review"><summary><b>${esc(student?.full_name||f.student_name||'Ученик')}</b><span>${esc(subj)} · ${date?esc(new Date(date).toLocaleString('ru-RU')):''}</span><span class="pill ${Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total)?'ok':'warn'}">${esc(receiptLabel(f))}</span></summary>
+         <div class="layer bun top"><b>Похвала</b><div>${esc(f.praise)}</div></div>
+         <div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div>
+         <div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div>
+         <p class="note">Автор: ${esc(f.author_name||'Преподаватель')}</p>${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`;
+    }).join('');
+    showFeedbackFiles(selected.map(f=>f.id),list);
+  }
+  root.querySelectorAll('[data-afs-filter]').forEach(btn=>btn.onclick=()=>{
+    root.querySelectorAll('[data-afs-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+    showHistory(btn.dataset.afsFilter);
+  });
+  showHistory('all');
+  const collapse=root.querySelector('#afs-parents-collapse');
+  const parentBody=root.querySelector('#afs-panel-parents-body');
+  let loaded=false;
+  collapse.addEventListener('toggle',()=>{
+    if(!collapse.open||loaded)return;
+    loaded=true;parentBody.replaceChildren();renderClassParentEditor(classId,parentBody);
+  });
+  // Lightweight summary query: does not open the full edit table until requested.
+  const refreshPhoneSummary=async()=>{
+    const {data,error}=await supabase.rpc('afs_class_parent_grid',{p_class_id:classId});
+    if(!root.isConnected||state.panelClass!==classId)return;
+    const node=root.querySelector('#afs-parents-completion');
+    if(error){node.textContent='Заполненность недоступна';root.querySelector('#afs-phone-count').textContent='Нет доступа к данным';return;}
+    const people=data?.students||[];
+    const withPhone=people.filter(st=>(st.parents||[]).some(p=>p.parent_name&&normalizeKzPhone(p.phone))).length;
+    const pct=people.length?Math.round(withPhone*100/people.length):0;
+    node.textContent=pct+'% · '+withPhone+' из '+people.length;
+    root.querySelector('#afs-parents-bar').style.width=pct+'%';
+    root.querySelector('#afs-phone-percent').textContent=pct+'%';
+    root.querySelector('#afs-phone-count').textContent=withPhone+' из '+people.length+' учеников с телефоном родителя';
+  };
+  parentBody.addEventListener('afs-parent-grid-saved',refreshPhoneSummary);
+  refreshPhoneSummary();
+}
 async function renderClassCompletion(){
   const host=$('#afs-completion');if(!host)return;
   const {data,error}=await supabase.rpc('afs_class_parent_completion');
