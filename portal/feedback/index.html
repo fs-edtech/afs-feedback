@@ -373,7 +373,7 @@ async function loadData(){
 async function enter(session){
   if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
   state.user=session.user; setLogin(true);
-  try{await loadData()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
+  try{await loadData();await fsHandleCaptureLink()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
 $('#logout').addEventListener('click',async()=>{parentTemporaryCredentials.clear();await supabase.auth.signOut();await enter(null)});
@@ -1234,11 +1234,11 @@ function weeklyRenderComposer(){
  '<div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="fs-draft-praise" placeholder="Успехи и достижения"></textarea></div>'+
  '<div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="fs-draft-recs" placeholder="Затруднения и рекомендации"></textarea></div>'+
  '<div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="fs-draft-support" placeholder="Следующие шаги и поддержка"></textarea></div>'+
- '<div class="panel" style="margin:0"><h2>Работы ученика</h2><p class="note">Фотографии и документы будут прикрепляться к черновику. QR-фотографирование подключается отдельным этапом.</p><div class="fs-week-actions"><button class="btn ghost" id="fs-attach-device" type="button" disabled>Загрузить с устройства · скоро</button><button class="btn ghost" id="fs-attach-camera" type="button" disabled>Сфотографировать · скоро</button></div></div>'+
+ '<div class="panel" style="margin:0"><h2>Работы ученика</h2><p class="note">До 5 файлов, каждый до 10 МБ. Фотографии можно обрезать, повернуть и автоматически сжать перед отправкой.</p><div class="fs-week-actions"><button class="btn ghost" id="fs-attach-device" type="button">Загрузить с устройства</button><button class="btn ghost" id="fs-attach-camera" type="button">Сфотографировать</button><input id="fs-device-input" type="file" accept="image/*,application/pdf" multiple hidden><input id="fs-camera-input" type="file" accept="image/*" capture="environment" hidden></div><div id="fs-draft-files" class="note" style="margin-top:9px">Файлы пока не прикреплены.</div></div>'+
  '<div class="fs-week-actions"><button id="fs-draft-preview" class="btn ghost" type="button">Предпросмотр</button><button id="fs-draft-save" class="btn ghost" type="button">Сохранить черновик</button><button id="fs-draft-submit" class="btn primary" type="button">Передать куратору</button></div><div id="fs-draft-notice" class="note" role="status">Загружаем черновик…</div></div>';
  const key=student.id+'|'+fsWeekSelectedSubject+'|'+fsWeekSelectedDate;
  fsWeekEditingKey=key;
- let status='draft',loading=true,working=false;
+ let status='draft',loading=true,working=false,entryId=null;
  const fields=()=>({p_praise:host.querySelector('#fs-draft-praise').value,p_recommendations:host.querySelector('#fs-draft-recs').value,p_support:host.querySelector('#fs-draft-support').value});
  const notice=host.querySelector('#fs-draft-notice');
  const base=()=>({p_student_id:student.id,p_subject_id:Number(fsWeekSelectedSubject),p_week_start:fsWeekSelectedDate});
@@ -1250,6 +1250,7 @@ function weeklyRenderComposer(){
   working=true;notice.textContent=action==='save'?'Сохраняем черновик…':'Передаём куратору…';
   try{
    const data=await fsRpc('fs_weekly_work',{p_action:action,...base(),...fields()});
+   entryId=data.id;
    if(fsWeekEditingKey===key){
     notice.textContent=action==='save'?'Черновик сохранён. Его можно продолжить на другом устройстве.':'Передано куратору. Черновик исчез из списка незавершённых.';
     if(action==='submit'){status='submitted';inputs.forEach(x=>x.disabled=true);host.querySelector('#fs-draft-save').disabled=true;host.querySelector('#fs-draft-submit').disabled=true;}
@@ -1264,6 +1265,12 @@ function weeklyRenderComposer(){
  host.querySelector('#fs-draft-subject').onchange=e=>change('subject',e.target.value);
  inputs.forEach(x=>x.oninput=()=>{if(loading||status!=='draft')return;notice.textContent='Есть несохранённые изменения…';clearTimeout(fsWeekDraftTimer);fsWeekDraftTimer=setTimeout(()=>save(),1800)});
  host.querySelector('#fs-draft-save').onclick=()=>save();
+ const refreshFiles=()=>entryId?fsRenderFileList(entryId,host.querySelector('#fs-draft-files'),notice):Promise.resolve();
+ async function ensureEntry(){if(status!=='draft')throw Error('Отзыв уже передан куратору');if(!entryId){if(!await save())throw Error('Сначала сохраните черновик')}return entryId}
+ host.querySelector('#fs-attach-device').onclick=()=>host.querySelector('#fs-device-input').click();
+ host.querySelector('#fs-device-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(!files.length)return;try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}};
+ host.querySelector('#fs-attach-camera').onclick=async()=>{try{const id=await ensureEntry();if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){host.querySelector('#fs-camera-input').click()}else await fsShowQr(id,refreshFiles)}catch(error){notice.textContent='Не удалось начать фотографирование: '+error.message}};
+ host.querySelector('#fs-camera-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(files.length)try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}};
  host.querySelector('#fs-draft-preview').onclick=()=>{
   const subj=subjects.find(s=>s.id===fsWeekSelectedSubject);
   fsShowModal({week_start:fsWeekSelectedDate,sections:[{subject:subj.name,author:state.profile?.full_name||'Преподаватель',praise:fields().p_praise,recommendations:fields().p_recommendations,support:fields().p_support}],discipline:''},student.full_name,state.classes.find(c=>c.id===student.class_id)?.name||'');
@@ -1276,7 +1283,7 @@ function weeklyRenderComposer(){
   try{
    const entry=await fsRpc('fs_weekly_work',{p_action:'get',...base()});
    if(fsWeekEditingKey!==key||!host.isConnected)return;
-   if(entry){inputs[0].value=entry.praise||'';inputs[1].value=entry.recommendations||'';inputs[2].value=entry.support||'';status=entry.status;if(status!=='draft'){inputs.forEach(x=>x.disabled=true);host.querySelector('#fs-draft-save').disabled=true;host.querySelector('#fs-draft-submit').disabled=true;notice.textContent='Обратная связь уже передана куратору. Выберите следующую учебную неделю.';}else notice.textContent='Черновик загружен. Изменения автоматически сохраняются.';}
+   if(entry){entryId=entry.id;refreshFiles();inputs[0].value=entry.praise||'';inputs[1].value=entry.recommendations||'';inputs[2].value=entry.support||'';status=entry.status;if(status!=='draft'){inputs.forEach(x=>x.disabled=true);host.querySelector('#fs-draft-save').disabled=true;host.querySelector('#fs-draft-submit').disabled=true;notice.textContent='Обратная связь уже передана куратору. Выберите следующую учебную неделю.';}else notice.textContent='Черновик загружен. Изменения автоматически сохраняются.';}
    else notice.textContent='Новый черновик. Текст автоматически сохраняется после ввода.';
   }catch(e){notice.textContent='Не удалось загрузить: '+e.message;inputs.forEach(x=>x.disabled=true)}
   finally{loading=false}
@@ -1355,6 +1362,115 @@ async function weeklyRenderParent(){
    host.querySelector('[data-parent-download="'+r.id+'"]').onclick=()=>fsDownloadPdf(r,r.student_name,r.class_name);
   }
  }catch(e){root.innerHTML='<div class="toast bad">Не удалось загрузить отчёты: '+esc(e.message)+'</div>'}
+}
+
+function fsProcessImage(file){
+ return new Promise(async(resolve,reject)=>{
+  if(!file.type.startsWith('image/')){resolve(file);return}
+  const url=URL.createObjectURL(file);
+  const modal=document.createElement('div');modal.className='fs-week-modal';
+  modal.innerHTML='<div class="fs-week-dialog"><h2>Подготовить фотографию</h2><p class="note">Обрежьте лишнее и поверните изображение. Перед загрузкой фото будет уменьшено, сохранив читаемость.</p><div style="max-height:58vh;overflow:hidden;display:flex;justify-content:center"><img id="fs-crop-photo" style="max-width:100%;display:block" alt="Фотография работы ученика"></div><div class="fs-week-actions" style="margin-top:16px"><button class="btn ghost" id="fs-crop-left" type="button">↶ Повернуть</button><button class="btn ghost" id="fs-crop-right" type="button">↷ Повернуть</button><button class="btn primary" id="fs-crop-done" type="button">Готово · сжать</button><button class="btn ghost" id="fs-crop-cancel" type="button">Отмена</button></div><div class="note" id="fs-crop-info">Загружаем редактор…</div></div>';
+  document.body.append(modal);
+  let cropper=null;
+  const cleanup=()=>{cropper?.destroy();URL.revokeObjectURL(url);modal.remove()};
+  const img=modal.querySelector('#fs-crop-photo');img.src=url;
+  const fail=()=>{cleanup();reject(Error('Редактирование фотографии отменено'))};
+  modal.querySelector('#fs-crop-cancel').onclick=fail;
+  try{
+   if(!window.Cropper){
+    if(!document.querySelector('link[data-fs-cropper]')){const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css';css.dataset.fsCropper='1';document.head.append(css)}
+    await new Promise((yes,no)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js';s.onload=yes;s.onerror=no;document.head.append(s)})
+   }
+   await new Promise((yes,no)=>{if(img.complete&&img.naturalWidth)yes();else{img.onload=yes;img.onerror=no}});
+   cropper=new window.Cropper(img,{viewMode:1,autoCropArea:0.95,background:false});
+   modal.querySelector('#fs-crop-info').textContent='Перетащите рамку обрезки и нажмите «Готово».';
+   modal.querySelector('#fs-crop-left').onclick=()=>cropper.rotate(-90);
+   modal.querySelector('#fs-crop-right').onclick=()=>cropper.rotate(90);
+   modal.querySelector('#fs-crop-done').onclick=()=>{
+    const canvas=cropper.getCroppedCanvas({maxWidth:2000,maxHeight:2000,fillColor:'#ffffff',imageSmoothingQuality:'high'});
+    if(!canvas){cleanup();reject(Error('Не удалось прочитать фотографию'));return}
+    canvas.toBlob(blob=>{if(!blob){cleanup();reject(Error('Ошибка сжатия'));return}
+     const converted=new File([blob],file.name.replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'});
+     cleanup();resolve(converted);
+    },'image/jpeg',0.83);
+   };
+  }catch(e){cleanup();reject(Error('Редактор фотографий недоступен: '+(e.message||e)))}
+ });
+}
+
+async function fsWeeklyUploadFiles(entryId,files,notice,done){
+ const extensions={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
+ for(const original of files){
+  try{
+   notice.textContent='Подготавливаем '+original.name+'…';
+   const file=await fsProcessImage(original);
+   if(file.size>10485760||!extensions[file.type])throw Error('Только JPG, PNG, WebP, PDF до 10 МБ');
+   const path=entryId+'/'+crypto.randomUUID()+'.'+extensions[file.type];
+   const data=await fsRpc('fs_weekly_files',{p_action:'register',p_entry_id:entryId,p_storage_path:path,p_filename:file.name.slice(0,200),p_mime:file.type,p_size:file.size});
+   const result=await supabase.storage.from('fs-weekly-files').upload(path,file,{contentType:file.type,upsert:false});
+   if(result.error){await fsRpc('fs_weekly_files',{p_action:'remove',p_entry_id:entryId,p_filename:data.id}).catch(()=>{});throw result.error}
+   notice.textContent='Файл '+file.name+' загружен ('+Math.round(file.size/1024)+' КБ).';
+  }catch(e){notice.textContent='Не удалось загрузить '+original.name+': '+e.message;break}
+ }
+ if(done)await done();
+}
+
+async function fsRenderFileList(entryId,container,notice){
+ if(!entryId||!container?.isConnected)return;
+ try{
+  const files=await fsRpc('fs_weekly_files',{p_action:'list',p_entry_id:entryId});
+  if(!container.isConnected)return;
+  container.innerHTML=files.length?'<div class="note">Прикреплено: '+files.length+' из 5</div>'+files.map(f=>'<div class="fs-week-actions" style="padding:6px 0"><button class="btn ghost" data-file-open="'+f.id+'">📎 '+esc(f.name)+' · '+Math.round(f.size/1024)+' КБ</button><button class="btn ghost" type="button" data-file-delete="'+f.id+'">Удалить</button></div>').join(''):'<p class="note">Вложений пока нет.</p>';
+  for(const f of files){
+   const o=container.querySelector('[data-file-open="'+f.id+'"]');
+   o.onclick=async()=>{const {data,error}=await supabase.storage.from('fs-weekly-files').createSignedUrl(f.path,60);if(error)notice.textContent='Не удалось открыть: '+error.message;else window.open(data.signedUrl,'_blank','noopener,noreferrer')};
+   const del=container.querySelector('[data-file-delete="'+f.id+'"]');
+   del.onclick=async()=>{
+    if(!confirm('Удалить вложение '+f.name+'?'))return;
+    del.disabled=true;
+    try{
+     const {error}=await supabase.storage.from('fs-weekly-files').remove([f.path]);if(error)throw error;
+     await fsRpc('fs_weekly_files',{p_action:'remove',p_entry_id:entryId,p_filename:f.id});
+     notice.textContent='Файл удалён';await fsRenderFileList(entryId,container,notice);
+    }catch(e){notice.textContent='Ошибка удаления: '+e.message;del.disabled=false}
+   };
+  }
+ }catch(e){notice.textContent='Не удалось получить вложения: '+e.message}
+}
+
+async function fsShowQr(entryId,refresh){
+ const data=await fsRpc('fs_weekly_capture',{p_action:'create',p_entry_id:entryId});
+ const url=location.origin+location.pathname+'?capture='+encodeURIComponent(data.token);
+ const overlay=document.createElement('div');overlay.className='fs-week-modal';
+ overlay.innerHTML='<div class="fs-week-dialog" style="max-width:440px;text-align:center"><h2>Сфотографировать через телефон</h2><p class="note">Откройте камеру телефона и отсканируйте QR. Войдите под тем же аккаунтом преподавателя. Код действует 5 минут и используется один раз.</p><div id="fs-qr-image" style="display:flex;justify-content:center;margin:14px"></div><div class="fs-week-actions" style="justify-content:center"><button class="btn ghost" id="fs-qr-close" type="button">Закрыть</button><button class="btn ghost" id="fs-qr-reload" type="button">Новый QR</button></div><div class="note" id="fs-qr-status">Ожидаем фотографию…</div></div>';
+ document.body.append(overlay);
+ let timer=null;
+ const close=()=>{if(timer)clearInterval(timer);overlay.remove()};
+ overlay.querySelector('#fs-qr-close').onclick=close;
+ overlay.querySelector('#fs-qr-reload').onclick=()=>{close();fsShowQr(entryId,refresh).catch(e=>alert(e.message))};
+ try{
+  if(!window.QRCode)await new Promise((yes,no)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';s.onload=yes;s.onerror=no;document.head.append(s)});
+  new window.QRCode(overlay.querySelector('#fs-qr-image'),{text:url,width:226,height:226,correctLevel:window.QRCode.CorrectLevel.M});
+  let oldList=await fsRpc('fs_weekly_files',{p_action:'list',p_entry_id:entryId});let previous=oldList.length;
+  timer=setInterval(async()=>{if(!overlay.isConnected){clearInterval(timer);return}try{const next=await fsRpc('fs_weekly_files',{p_action:'list',p_entry_id:entryId});if(next.length!==previous){previous=next.length;overlay.querySelector('#fs-qr-status').textContent='Фотографии получены: '+next.length+' из 5';refresh?.()}}catch{}},3500);
+ }catch(e){overlay.querySelector('#fs-qr-status').textContent='Ошибка создания QR: '+e.message}
+}
+
+async function fsHandleCaptureLink(){
+ const token=new URLSearchParams(location.search).get('capture');
+ if(!token||!state.user||window.fsCaptureHandled)return;
+ window.fsCaptureHandled=true;
+ history.replaceState(null,'',location.pathname);
+ let entry;
+ try{entry=await fsRpc('fs_weekly_capture',{p_action:'resolve',p_token:token})}catch(e){alert('QR-код недействителен: '+e.message);return}
+ const overlay=document.createElement('div');overlay.className='fs-week-modal';
+ overlay.innerHTML='<div class="fs-week-dialog" style="max-width:460px"><h2>Сфотографировать работу ученика</h2><p class="note">Файл будет прикреплён к вашему предметному черновику на компьютере. Можно сделать несколько снимков.</p><input type="file" id="fs-mobile-capture" accept="image/*" capture="environment" hidden><div class="fs-week-actions"><button id="fs-mobile-camera" class="btn primary" type="button">📷 Открыть камеру</button><button id="fs-mobile-gallery" class="btn ghost" type="button">Галерея</button><button id="fs-mobile-close" class="btn ghost" type="button">Завершить</button></div><div id="fs-mobile-result" class="note">Готово к съёмке.</div></div>';
+ document.body.append(overlay);
+ const camera=overlay.querySelector('#fs-mobile-capture'),note=overlay.querySelector('#fs-mobile-result');
+ overlay.querySelector('#fs-mobile-camera').onclick=()=>{camera.setAttribute('capture','environment');camera.click()};
+ overlay.querySelector('#fs-mobile-gallery').onclick=()=>{camera.removeAttribute('capture');camera.click()};
+ overlay.querySelector('#fs-mobile-close').onclick=()=>overlay.remove();
+ camera.onchange=async()=>{const files=Array.from(camera.files||[]);if(files.length)await fsWeeklyUploadFiles(entry.entry_id,files,note);camera.value=''};
 }
 
 const {data:{session},error}=await supabase.auth.getSession();
