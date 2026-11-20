@@ -1189,7 +1189,7 @@ let fsWeekSelectedSubject=null;
 let fsWeekDraftTimer=null;
 let fsWeekEditingKey=null;
 function fsMonday(d=new Date()){const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7));return x.toISOString().slice(0,10)}
-function fsWeekLabel(start){const first=new Date('2026-09-07T00:00:00Z'),d=new Date(start+'T00:00:00Z'),num=Math.round((d-first)/604800000)+1,finish=new Date(d);finish.setUTCDate(finish.getUTCDate()+4);return 'Неделя '+num+' ('+d.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'})+'–'+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'})+' г.)'}
+function fsWeekLabel(start){const first=new Date('2026-09-07T00:00:00Z'),d=new Date(start+'T00:00:00Z'),num=Math.round((d-first)/604800000)+1,finish=new Date(d);finish.setUTCDate(finish.getUTCDate()+4);const sameMonth=d.getUTCMonth()===finish.getUTCMonth()&&d.getUTCFullYear()===finish.getUTCFullYear();const period=sameMonth?d.getUTCDate()+'–'+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}):d.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'})+' – '+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'});return 'Неделя '+num+' ('+period+' г.)'}
 function fsWeekOptions(selected){const now=new Date(fsMonday()),out=[];for(let i=0;i<18;i++){const d=new Date(now);d.setUTCDate(d.getUTCDate()-7*i);const v=d.toISOString().slice(0,10);out.push('<option value="'+v+'" '+(selected===v?'selected':'')+'>'+esc(fsWeekLabel(v))+'</option>')}return out.join('')}
 async function fsRpc(name,params={}){const r=await supabase.rpc(name,params);if(r.error)throw Error(msg(r.error));return r.data}
 function fsHtmlDoc(report,studentName,className){
@@ -1247,6 +1247,7 @@ function weeklyRenderComposer(){
  const formValid=()=>!working&&status==='draft'&&fsWeekEditingKey===key;
  const inputs=[host.querySelector('#fs-draft-praise'),host.querySelector('#fs-draft-recs'),host.querySelector('#fs-draft-support')];
  const save=async(action='save')=>{
+  if(working&&action==='save'){clearTimeout(fsWeekDraftTimer);fsWeekDraftTimer=setTimeout(()=>save('save'),1200);return false}
   if(!formValid())return false;
   clearTimeout(fsWeekDraftTimer);
   working=true;notice.textContent=action==='save'?'Сохраняем черновик…':'Передаём куратору…';
