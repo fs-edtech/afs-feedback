@@ -201,6 +201,29 @@ header{box-shadow:0 2px 16px #00000005}
 .afs-add-assignment{background:#FCFAF6}
 @media(max-width:620px){.afs-bulk-row-head{grid-template-columns:1fr auto}.afs-bulk-row-head .afs-bulk-subject-wrap{grid-column:1/-1}.afs-bulk-class-choice{font-size:12px}.afs-staff-dialog{max-height:92vh}}
 
+
+/* Consolidated weekly feedback */
+.fs-week-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.fs-week-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.fs-week-status{font-size:12px;color:var(--muted)}
+.fs-week-row{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:10px 0;overflow:hidden}
+.fs-week-row>summary{list-style:none;padding:15px 13px;cursor:pointer;display:flex;align-items:center;gap:12px}
+.fs-week-row>summary::-webkit-details-marker{display:none}
+.fs-week-row>summary:before{content:'▸';color:var(--muted)}
+.fs-week-row[open]>summary:before{content:'▾'}
+.fs-week-count{margin-left:auto;font-weight:700;background:var(--sunk);padding:5px 10px;border-radius:9px}
+.fs-week-subjects{padding:0 14px 14px}
+.fs-week-modal{position:fixed;inset:0;z-index:9999;background:rgba(12,17,26,.70);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}
+.fs-week-modal[hidden]{display:none}
+.fs-week-dialog{background:var(--surface);color:var(--fg);border-radius:15px;max-width:780px;width:100%;box-shadow:0 20px 65px rgba(0,0,0,.25);padding:20px}
+.fs-week-paper{background:white;color:#182336;padding:30px;border:1px solid #e3e7ef;border-radius:8px;max-width:700px;margin:15px auto}
+.fs-week-paper h2{font-size:24px;margin:15px 0}.fs-week-paper h3{font-size:17px;color:#1F3A5F}
+.fs-week-paper .fs-toc{padding:8px 0;border-top:1px solid #cfd8e5}
+.fs-week-paper .fs-section{margin-top:25px;border-top:1px solid #dce3eb;padding-top:14px}
+.fs-week-paper .fs-field{margin:12px 0;background:#f3f6fb;border-radius:8px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.fs-week-paper a{color:#1f3a5f;text-decoration:underline}
+.fs-week-student-switch{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+@media(max-width:640px){.fs-week-paper{padding:15px}.fs-week-dialog{padding:12px}}
 </style>
 
 <header><div class="wrap hrow">
@@ -209,7 +232,7 @@ header{box-shadow:0 2px 16px #00000005}
   <nav class="tabs" role="tablist" aria-label="Разделы">
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
-    <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button>
+    <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button><button role="tab" id="tab-weekly" data-tab="weekly" aria-selected="false" hidden>Отправка родителям</button>
     <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
     <button role="tab" id="tab-parent" data-tab="parent" aria-selected="false" hidden>Мои дети</button>
     <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Сотрудники и управление</button>
@@ -235,12 +258,13 @@ header{box-shadow:0 2px 16px #00000005}
     </div>
     <div class="panel" id="composer"><div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div></div>
   </section>
+  <section id="v-weekly" hidden></section>
   <section id="v-panel" hidden></section>
   <section id="v-class" hidden></section>
   <section id="v-roster" hidden></section>
   <section id="v-manage" hidden></section>
   <section id="v-parent" hidden></section>
-</main>
+</main><div id="fs-week-modal" class="fs-week-modal" hidden><div class="fs-week-dialog" role="dialog" aria-modal="true" aria-label="Просмотр недельной обратной связи"><div class="fs-week-actions"><strong style="flex:1">Предпросмотр обратной связи</strong><button type="button" class="btn ghost" id="fs-week-close">Закрыть ✕</button></div><div id="fs-week-document"></div><div id="fs-week-modal-actions" class="fs-week-actions"></div></div></div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -335,11 +359,12 @@ async function loadData(){
   $('#tab-manage').hidden=!isAdmin;
   // For teachers, only Send + Panel. Admin roster remains for student import.
   $('#tab-class').hidden=true;
+  $('#tab-weekly').hidden=!(isAdmin||state.roles.includes('director')||state.roles.includes('tutor')||state.assignments.some(a=>a.assignment_type==='homeroom'));
   $('#tab-roster').hidden=!isAdmin;
   if(state.tab==='class'||(state.tab==='roster'&&!isAdmin))state.tab='panel';
   for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
   if(!isAdmin && state.tab==='manage')state.tab='send';
-  for(const section of ['send','panel','class','roster','manage','parent']){
+  for(const section of ['send','panel','class','roster','manage','parent','weekly']){
     $('#v-'+section).hidden=section!==state.tab;
     $('#tab-'+section).setAttribute('aria-selected',String(section===state.tab));
   }
@@ -363,9 +388,9 @@ $('#change-password-form').onsubmit=async e=>{
 };
 
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
-function pickTab(tab){if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
+function pickTab(tab){if(tab==='weekly'&&$('#tab-weekly').hidden)return;if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent','weekly']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
-function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
+function render(){if(state.tab==='weekly'){renderWeeklyCurator()}else if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
 function renderList(){
   const allClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
   const visibleClasses=allClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
@@ -412,59 +437,7 @@ async function showFeedbackFiles(feedbackIds, container) {
     }
   }
 }
-function renderComposer(){
-  const s=state.students.find(x=>x.id===state.selectedStudent);
-  if(!s){$('#composer').innerHTML='<div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div>';return;}
-  const allowed=ownSubjects();
-  const history=state.staffFeed.filter(f=>f.student_id===s.id);
-  $('#composer').innerHTML=`<div class="compose"><div class="chead"><div><div class="t">${esc(s.full_name)}</div><div class="s">${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</div></div></div>
-  <div class="grid2"><label>Предмет<select id="f-subject">${allowed.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label></div>
-  <div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="f-praise" placeholder="Что ребёнку удалось"></textarea></div>
-  <div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="f-recs" placeholder="Что нужно улучшить"></textarea></div>
-  <div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="f-support" placeholder="Поддержка и следующий шаг"></textarea></div>
-  <label>Прикрепить работу ученика (до 5 файлов, каждый до 10 МБ)<input type="file" id="f-attachments" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></label>
-  <div><h2>Предпросмотр</h2><div id="preview" class="preview"></div></div>
-  <div class="actions"><button id="publish" class="btn primary" type="button" ${allowed.length?'':'disabled'}>Опубликовать обратную связь</button></div>
-  <div id="notice" role="status" class="note">${allowed.length?'После публикации запись будет доступна в базе. WhatsApp пока не отправляется.':'Нет назначения на предмет этого класса — публикация недоступна.'}</div>
-  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(f.author_name||'Преподаватель')} · ${esc(receiptLabel(f))}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div class="note" style="margin-top:7px">Автор: ${esc(f.author_name)} · ${esc(new Date(f.published_at).toLocaleString('ru-RU'))}</div>${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
-  showFeedbackFiles(history.map(f=>f.id),$('#composer'));
-  const preview=()=>{$('#preview').textContent=[$('#f-praise').value,$('#f-recs').value,$('#f-support').value].filter(Boolean).join('\n\n')||'Текст появится здесь'};
-  ['#f-praise','#f-recs','#f-support'].forEach(q=>$(q).addEventListener('input',preview));
-  preview();
-  $('#publish').addEventListener('click',async()=>{
-   if(state.busy)return;const button=$('#publish'); const notice=$('#notice');
-   const params={p_student_id:s.id,p_subject_id:Number($('#f-subject').value),p_kind:'weekly',p_praise:$('#f-praise').value,p_recommendations:$('#f-recs').value,p_support:$('#f-support').value,p_topic:null,p_error_type:null};
-   if([params.p_praise,params.p_recommendations,params.p_support].some(v=>v.trim().length<10)){notice.textContent='Заполни все три поля: минимум 10 символов каждое.';return;}
-   const files=Array.from($('#f-attachments').files||[]);
-   const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
-   if(files.length>5||files.some(f=>!mimeExt[f.type]||f.size<1||f.size>10485760||f.name.length>200)){
-     notice.textContent='Можно выбрать до 5 файлов JPG, PNG, WebP или PDF, до 10 МБ каждый.';return;
-   }
-   state.busy=true;button.disabled=true;notice.textContent='Публикуем отзыв…';
-   const {data,error}=await supabase.rpc('publish_feedback',params);
-   if(error){state.busy=false;button.disabled=false;notice.textContent='Ошибка: '+msg(error);return;}
-   let problems=[];
-   for(const file of files){
-     try{
-       const path=`${data}/${crypto.randomUUID()}.${mimeExt[file.type]}`;
-       const {error:registerError}=await supabase.rpc('afs_register_attachment',{
-         p_feedback_id:data,p_storage_path:path,p_original_filename:file.name,
-         p_mime_type:file.type,p_size_bytes:file.size
-       });
-       if(registerError)throw registerError;
-       const {error:uploadError}=await supabase.storage.from('feedback-files')
-         .upload(path,file,{contentType:file.type,upsert:false});
-       if(uploadError)throw uploadError;
-     }catch(e){problems.push(`${file.name}: ${msg(e)}`);}
-   }
-   state.busy=false;
-   const resultMessage=problems.length
-     ?`Отзыв №${data} опубликован, но некоторые файлы не загрузились: ${problems.join('; ')}`
-     :`Отзыв №${data} опубликован. Файлов прикреплено: ${files.length}.`;
-   try{await loadData();if($('#notice'))$('#notice').textContent=resultMessage;}
-   catch(e){if($('#notice'))$('#notice').textContent=resultMessage+' Обновление списка: '+msg(e);}
-  });
-}
+function renderComposer(){return weeklyRenderComposer()}
 function receiptLabel(f){
   const total=Number(f.parents_total||0),opened=Number(f.opened_count||0),ack=Number(f.acknowledged_count||0);
   if(!total)return 'Родительский аккаунт пока не привязан';
@@ -1207,45 +1180,48 @@ async function renderManage(){
     return 'Преподаватель создан. ID: '+data.user_id;
   })};
 }
-async function renderParent(){
-  const root=$('#v-parent');
-  root.innerHTML='<div class="panel">Загружаем отзывы ваших детей…</div>';
-  if(!state.roles.includes('parent')){root.textContent='Нет доступа';return;}
-  const [{data:mine,error:e1},{data:links,error:e2}]=await Promise.all([
-    supabase.from('parents').select('id,full_name').eq('user_id',state.user.id),
-    supabase.from('student_parents').select('student_id,parent_id')
-  ]);
-  if(e1||e2){root.innerHTML=`<div class="toast bad">Ошибка доступа: ${esc(msg(e1||e2))}</div>`;return;}
-  const parentIds=new Set((mine||[]).map(p=>p.id));
-  const childIds=[...new Set((links||[]).filter(l=>parentIds.has(l.parent_id)).map(l=>l.student_id))];
-  if(!childIds.length){root.innerHTML='<div class="empty">Пока нет привязанных детей. Обратитесь к администрации школы.</div>';return;}
-  // Здесь используются только опубликованные записи, полученные с учётом RLS.
-  const children=state.students.filter(s=>childIds.includes(s.id));
-  const feedback=state.feedback.filter(f=>childIds.includes(f.student_id)&&f.status==='published');
-  root.innerHTML=`<div class="panel"><h2>Мои дети</h2><p class="note">Здесь отображается только опубликованная обратная связь.</p>
-    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div><div data-files-for="${f.id}"></div><div class="actions" style="margin-top:12px"><button class="btn ghost" type="button" data-ack="${f.id}">Я ознакомился(-ась)</button><span class="note" data-receipt="${f.id}">Ожидает подтверждения</span></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
-  await showFeedbackFiles(feedback.map(f=>f.id),root);
-  root.querySelectorAll('details').forEach(details=>details.addEventListener('toggle',async()=>{
-    if(!details.open)return;
-    const b=details.querySelector('[data-ack]');
-    if(!b)return;
-    const id=Number(b.dataset.ack);
-    if(details.dataset.openRecorded==='true')return;
-    details.dataset.openRecorded='true';
-    const {data,error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:id,p_action:'open'});
-    const output=details.querySelector('[data-receipt]');
-    if(error){output.textContent='Не удалось сохранить просмотр: '+msg(error);details.dataset.openRecorded='';return;}
-    if(data?.acknowledged){output.textContent='Вы ознакомились';b.disabled=true;b.textContent='Ознакомление подтверждено';}
-    else output.textContent='Просмотрено · ожидает подтверждения';
-  }));
-  root.querySelectorAll('[data-ack]').forEach(b=>b.addEventListener('click',async()=>{
-    const output=root.querySelector(`[data-receipt="${b.dataset.ack}"]`);
-    b.disabled=true;output.textContent='Сохраняем подтверждение…';
-    const {error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:Number(b.dataset.ack),p_action:'acknowledge'});
-    if(error){b.disabled=false;output.textContent='Ошибка: '+msg(error);return;}
-    b.textContent='Ознакомление подтверждено';output.textContent='Вы ознакомились';
-  }));
+async function renderParent(){return weeklyRenderParent()}
+
+let fsWeekSelectedDate=null;
+let fsWeekSelectedSubject=null;
+let fsWeekDraftTimer=null;
+let fsWeekEditingKey=null;
+function fsMonday(d=new Date()){const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7));return x.toISOString().slice(0,10)}
+function fsWeekLabel(start){const first=new Date('2026-09-07T00:00:00Z'),d=new Date(start+'T00:00:00Z'),num=Math.round((d-first)/604800000)+1,finish=new Date(d);finish.setUTCDate(finish.getUTCDate()+4);return 'Неделя '+num+' ('+d.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'})+'–'+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'})+' г.)'}
+function fsWeekOptions(selected){const now=new Date(fsMonday()),out=[];for(let i=0;i<18;i++){const d=new Date(now);d.setUTCDate(d.getUTCDate()-7*i);const v=d.toISOString().slice(0,10);out.push('<option value="'+v+'" '+(selected===v?'selected':'')+'>'+esc(fsWeekLabel(v))+'</option>')}return out.join('')}
+async function fsRpc(name,params={}){const r=await supabase.rpc(name,params);if(r.error)throw Error(msg(r.error));return r.data}
+function fsHtmlDoc(report,studentName,className){
+const parts=Array.isArray(report.sections)?report.sections:[];
+return '<article class="fs-week-paper" id="fs-report-sheet"><div style="font-weight:700;font-size:13px;letter-spacing:1px">ASTANA FUTURE SCHOOL</div><div style="font-size:11px;color:#607084">2026–2027 учебный год</div><h2>Индивидуальная обратная связь</h2><p><b>'+esc(fsWeekLabel(report.week_start))+'</b></p><p><b>Ученик:</b> '+esc(studentName)+'<br><b>Класс:</b> '+esc(className)+'</p><h3 id="fs-report-toc">Содержание</h3><div class="fs-toc">'+parts.map((p,i)=>'<p><a href="#fs-section-'+i+'">'+esc(p.subject)+'</a></p>').join('')+(report.discipline?.trim()?'<p><a href="#fs-discipline">❕ Дисциплина и поведение</a></p>':'')+'</div>'+parts.map((p,i)=>'<section class="fs-section" id="fs-section-'+i+'"><h3>'+esc(p.subject)+'</h3><p style="font-size:12px;color:#607084">Преподаватель: '+esc(p.author)+'</p><div class="fs-field"><b>Достижения и успехи</b><p>'+esc(p.praise)+'</p></div><div class="fs-field"><b>На что обратить внимание</b><p>'+esc(p.recommendations)+'</p></div><div class="fs-field"><b>Поддержка и следующий шаг</b><p>'+esc(p.support)+'</p></div><a href="#fs-report-toc">Вернуться к содержанию</a></section>').join('')+(report.discipline?.trim()?'<section class="fs-section" id="fs-discipline"><h3>Дисциплина и поведение</h3><div class="fs-field">'+esc(report.discipline)+'</div><a href="#fs-report-toc">Вернуться к содержанию</a></section>':'')+'<p style="font-size:11px;color:#607084;margin-top:30px">Сформировано Future School Platform. Индивидуальная информация ученика.</p></article>';
 }
+function fsShowModal(report,name,cls,options={}){
+ const modal=$('#fs-week-modal');$('#fs-week-document').innerHTML=fsHtmlDoc(report,name,cls);
+ const bar=$('#fs-week-modal-actions');bar.replaceChildren();
+ const pdf=document.createElement('button');pdf.className='btn ghost';pdf.textContent='Скачать PDF';pdf.onclick=()=>fsDownloadPdf(report,name,cls);bar.append(pdf);
+ if(options.ack){const ack=document.createElement('button');ack.className='btn primary';ack.textContent=options.acknowledged?'Ознакомление подтверждено':'Я ознакомился(-ась)';ack.disabled=!!options.acknowledged;ack.onclick=async()=>{ack.disabled=true;try{await fsRpc('fs_weekly_receipt',{p_report_id:report.id,p_action:'acknowledge'});ack.textContent='Ознакомление подтверждено';}catch(e){ack.disabled=false;alert(e.message)}};bar.append(ack)}
+ modal.hidden=false;document.body.style.overflow='hidden';$('#fs-week-close').onclick=()=>{modal.hidden=true;document.body.style.overflow=''};
+ modal.onclick=e=>{if(e.target===modal)$('#fs-week-close').click()};
+}
+async function fsDownloadPdf(report,name,cls){
+ const load=async(url)=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.append(s)});
+ try{
+  if(!window.pdfMake){await load('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.20/pdfmake.min.js');await load('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.20/vfs_fonts.js')}
+  const sections=Array.isArray(report.sections)?report.sections:[];
+  const content=[
+   {text:'ASTANA FUTURE SCHOOL',style:'brand'},
+   {text:'Индивидуальная обратная связь',style:'title'},
+   {text:fsWeekLabel(report.week_start),margin:[0,0,0,13]},
+   {text:'Ученик: '+name+'    Класс: '+cls,margin:[0,0,0,20]},
+   {toc:{title:{text:'Содержание',style:'heading'}},pageBreak:'after'}
+  ];
+  sections.forEach(p=>{content.push({text:p.subject,style:'heading',tocItem:true,id:'subject-'+p.subject,pageBreak:'before'},{text:'Преподаватель: '+p.author,color:'#606c80',fontSize:10,margin:[0,3,0,15]});
+   [['Достижения и успехи',p.praise],['На что обратить внимание',p.recommendations],['Поддержка и следующий шаг',p.support]].forEach(x=>content.push({text:x[0],bold:true,margin:[0,12,0,4]},{text:x[1],margin:[0,0,0,10]}));
+  });
+  if(report.discipline?.trim())content.push({text:'❕ Дисциплина и поведение',style:'heading',tocItem:true,pageBreak:'before'},{text:report.discipline,margin:[0,14,0,8]});
+  window.pdfMake.createPdf({info:{title:'Обратная связь — '+name},content,styles:{brand:{fontSize:12,bold:true,color:'#1F3A5F',margin:[0,0,0,24]},title:{fontSize:23,bold:true,margin:[0,0,0,8]},heading:{fontSize:16,bold:true,color:'#1F3A5F',margin:[0,6,0,10]}},defaultStyle:{fontSize:11,lineHeight:1.25},pageMargins:[46,46,46,52],footer:(current,total)=>({text:current+' / '+total,alignment:'center',fontSize:9,color:'#8a94a4'})}).download('AFS_Обратная_связь_'+report.week_start+'_'+name.replace(/\s+/g,'_')+'.pdf');
+ }catch(e){alert('Не удалось сформировать PDF: '+e.message)}
+}
+
 const {data:{session},error}=await supabase.auth.getSession();
 if(error)$('#login-error').textContent=msg(error);
 if(settingInvitationPassword){
