@@ -212,7 +212,7 @@ header{box-shadow:0 2px 16px #00000005}
     <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button>
     <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
     <button role="tab" id="tab-parent" data-tab="parent" aria-selected="false" hidden>Мои дети</button>
-    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Управление</button>
+    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Сотрудники и управление</button>
   </nav>
 </div></header>
 
@@ -1126,7 +1126,7 @@ async function renderManage(){
       <button class="btn primary" type="submit">Добавить учителя</button><div id="staff-result" class="note" role="status"></div>
       <p class="note">Учётная запись создаётся без пароля. Рассылку приглашений подключим отдельно.</p>
     </form></div>
-    <div class="panel"><h2>Назначить преподавателя</h2><form id="assign-form" class="compose">
+    <div class="panel"><h2>Быстрое назначение (1 класс)</h2><p class="note">Для нескольких классов и предметов за один раз откройте карточку учителя в таблице сотрудников ниже.</p><form id="assign-form" class="compose">
       <label>Преподаватель<select id="a-teacher" required>${option(t,x=>x.full_name)}</select></label>
       <div class="grid2"><label>Класс<select id="a-class" required>${option(d.classes,x=>x.name)}</select></label>
       <label>Тип назначения<select id="a-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label></div>
