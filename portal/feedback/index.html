@@ -395,7 +395,9 @@ function renderList(){
   const allClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
   const visibleClasses=allClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
   $('#classbar').innerHTML=visibleClasses.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
-  $('#slist').innerHTML=classStudents().map(s=>{let last=state.feedback.find(f=>f.student_id===s.id&&f.status==='published');return `<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill ${last?'ok':'bad'}">${last?'Есть отзыв':'Нет отзыва'}</span></button>`}).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
+  $('#slist').innerHTML=classStudents().map(s=>`<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill" data-week-status="${s.id}">Новый</span></button>`).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
+  const currentClass=state.selectedClass,currentWeek=fsWeekSelectedDate||fsMonday();
+  if(currentClass)fsRpc('fs_weekly_own_status',{p_class_id:currentClass,p_week_start:currentWeek}).then(rows=>{if(currentClass!==state.selectedClass||state.tab!=='send')return;for(const row of rows||[]){const badge=document.querySelector('[data-week-status="'+row.student_id+'"]');if(badge){badge.textContent=row.submitted?'Передано: '+row.submitted:row.draft?'Черновик: '+row.draft:'Новый';badge.className='pill '+(row.submitted?'ok':'')}}}).catch(e=>console.warn('Статусы черновиков:',e));
   document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.selectedClass=Number(b.dataset.class);state.selectedStudent=null;render()});
   document.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>{state.selectedStudent=Number(b.dataset.student);render()});
 }
@@ -1268,9 +1270,9 @@ function weeklyRenderComposer(){
  const refreshFiles=()=>entryId?fsRenderFileList(entryId,host.querySelector('#fs-draft-files'),notice):Promise.resolve();
  async function ensureEntry(){if(status!=='draft')throw Error('Отзыв уже передан куратору');if(!entryId){if(!await save())throw Error('Сначала сохраните черновик')}return entryId}
  host.querySelector('#fs-attach-device').onclick=()=>host.querySelector('#fs-device-input').click();
- host.querySelector('#fs-device-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(!files.length)return;try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}};
+ host.querySelector('#fs-device-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(!files.length)return;const sb=host.querySelector('#fs-draft-submit');sb.disabled=true;try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}finally{sb.disabled=status!=='draft'}};
  host.querySelector('#fs-attach-camera').onclick=async()=>{try{const id=await ensureEntry();if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){host.querySelector('#fs-camera-input').click()}else await fsShowQr(id,refreshFiles)}catch(error){notice.textContent='Не удалось начать фотографирование: '+error.message}};
- host.querySelector('#fs-camera-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(files.length)try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}};
+ host.querySelector('#fs-camera-input').onchange=async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(files.length){const sb=host.querySelector('#fs-draft-submit');sb.disabled=true;try{const id=await ensureEntry();await fsWeeklyUploadFiles(id,files,notice,refreshFiles)}catch(error){notice.textContent='Ошибка: '+error.message}finally{sb.disabled=status!=='draft'}}};
  host.querySelector('#fs-draft-preview').onclick=()=>{
   const subj=subjects.find(s=>s.id===fsWeekSelectedSubject);
   fsShowModal({week_start:fsWeekSelectedDate,sections:[{subject:subj.name,author:state.profile?.full_name||'Преподаватель',praise:fields().p_praise,recommendations:fields().p_recommendations,support:fields().p_support}],discipline:''},student.full_name,state.classes.find(c=>c.id===student.class_id)?.name||'');
@@ -1347,15 +1349,18 @@ async function weeklyRenderParent(){
  try{
   const reports=await fsRpc('fs_weekly_parent_reports');
   if(state.tab!=='parent')return;
-  const ids=[...new Set((reports||[]).map(r=>r.student_id))];
-  if(!ids.length){root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Пока нет опубликованных единых недельных отчётов. Они появятся здесь после отправки куратором.</p></div>';return}
+  const [{data:mine,error:mineError},{data:links,error:linkError}]=await Promise.all([supabase.from('parents').select('id').eq('user_id',state.user.id),supabase.from('student_parents').select('student_id,parent_id')]);
+  if(mineError||linkError)throw Error(msg(mineError||linkError));
+  const parentIds=new Set((mine||[]).map(p=>p.id));
+  const ids=[...new Set((links||[]).filter(x=>parentIds.has(x.parent_id)).map(x=>x.student_id))];
+  if(!ids.length){root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Нет привязанных детей. Обратитесь к администрации.</p></div>';return}
   if(!ids.includes(fsParentChildId))fsParentChildId=ids[0];
-  const kids=ids.map(id=>reports.find(r=>r.student_id===id));
+  const kids=ids.map(id=>{const r=reports.find(x=>x.student_id===id);if(r)return r;const s=state.students.find(x=>x.id===id);return {student_id:id,student_name:s?.full_name||'Ученик',class_name:state.classes.find(c=>c.id===s?.class_id)?.name||''}});
   root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Выберите ребёнка и учебную неделю. Каждый документ объединяет все предметы.</p><div class="fs-week-student-switch">'+kids.map(k=>'<button class="btn '+(k.student_id===fsParentChildId?'primary':'ghost')+'" data-child="'+k.student_id+'">'+esc(k.student_name)+' · '+esc(k.class_name)+'</button>').join('')+'</div><div id="fs-parent-reports"></div></div>';
   root.querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>{fsParentChildId=Number(b.dataset.child);weeklyRenderParent()});
   const list=reports.filter(r=>r.student_id===fsParentChildId);
   const host=root.querySelector('#fs-parent-reports');
-  host.innerHTML=list.map(r=>'<div class="fs-week-row" style="padding:14px"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div><div class="note">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join('');
+  host.innerHTML=list.length?list.map(r=>'<div class="fs-week-row" style="padding:14px"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div><div class="note">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join(''):'<p class="note">За выбранного ребёнка пока нет опубликованных отчётов.</p>';
   for(const r of list){
    const view=host.querySelector('[data-parent-view="'+r.id+'"]');view.onclick=async()=>{try{await fsRpc('fs_weekly_receipt',{p_report_id:r.id,p_action:'open'});r.opened_at=r.opened_at||new Date().toISOString()}catch(e){alert('Просмотр не зафиксирован: '+e.message)}
     fsShowModal(r,r.student_name,r.class_name,{ack:true,acknowledged:!!r.acknowledged_at})};
