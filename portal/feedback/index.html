@@ -239,7 +239,7 @@ header{box-shadow:0 2px 16px #00000005}
   </nav>
 </div></header>
 
-<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Email или номер телефона<input id="login-email" type="text" autocomplete="username" placeholder="email@example.com или +7 777 123 45 67" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
+<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Email или номер телефона<input id="login-email" type="text" autocomplete="username" placeholder="email@example.com или +7 777 123 45 67" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><div class="fs-week-actions"><button class="btn primary" type="submit">Войти</button><button class="btn ghost" type="button" id="forgot-password">Восстановить пароль</button></div><div id="login-error" role="alert" class="note"></div></form></div></div>
 <div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
 <section id="change-password-panel" class="wrap" hidden style="max-width:520px;margin-top:18px">
   <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose">
@@ -376,6 +376,17 @@ async function enter(session){
   try{await loadData();await fsHandleCaptureLink()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
+$('#forgot-password').addEventListener('click',async()=>{
+ const email=$('#login-email').value.trim(),output=$('#login-error');
+ if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){output.textContent='Введите email учётной записи в поле входа, затем нажмите «Восстановить пароль». Для входа по телефону обратитесь к администрации.';return}
+ const button=$('#forgot-password');button.disabled=true;output.textContent='Отправляем письмо для восстановления…';
+ try{
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  if(error)throw error;
+  output.textContent='Если такой email зарегистрирован и почтовая отправка настроена, на него придёт ссылка для смены пароля. Проверьте также папку «Спам».';
+ }catch(e){output.textContent='Не удалось отправить письмо: '+msg(e)}
+ finally{button.disabled=false}
+});
 $('#logout').addEventListener('click',async()=>{parentTemporaryCredentials.clear();await supabase.auth.signOut();await enter(null)});
 $('#change-password-open').onclick=()=>{$('#change-password-panel').hidden=!$('#change-password-panel').hidden;};
 $('#change-password-cancel').onclick=()=>{$('#change-password-panel').hidden=true;};
