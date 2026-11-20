@@ -1,0 +1,1181 @@
+<title>Обратная связь AFS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: a school-office tool. Sticky header with tabs; "Send" is a two-pane
+   roster + composer, "Panel" is summary-first (coverage tiles, then class and
+   teacher tables, then who needs attention). Burger layers echo the paper algorithm. */
+:root{
+  --bg:#F5F6F8; --surface:#FFFFFF; --sunk:#EDF0F4; --line:#D8DEE6;
+  --fg:#1B2433; --muted:#5D6A7C;
+  --navy:#1F3A5F; --navy-fg:#FFFFFF;
+  --bun:#C76A12; --bun-bg:#FCEFE0; --fill:#2E7D4F; --fill-bg:#E5F2EA;
+  --ok:#2E7D4F; --ok-bg:#E3F2E8; --warn:#A86A00; --warn-bg:#FBF0D9; --bad:#B3322B; --bad-bg:#FBE7E5;
+  --focus:#3B6FD8;
+  --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+  --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#12171F; --surface:#1A212C; --sunk:#151B24; --line:#2C3644;
+  --fg:#E6EAF0; --muted:#97A3B4;
+  --navy:#8FB0DD; --navy-fg:#0E1520;
+  --bun:#E79A4F; --bun-bg:#2E2216; --fill:#5DBB85; --fill-bg:#16281E;
+  --ok:#5DBB85; --ok-bg:#16281E; --warn:#E2B04A; --warn-bg:#2C2414; --bad:#EF7B72; --bad-bg:#311A19;
+  --focus:#7FA6F0; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#12171F; --surface:#1A212C; --sunk:#151B24; --line:#2C3644;
+  --fg:#E6EAF0; --muted:#97A3B4;
+  --navy:#8FB0DD; --navy-fg:#0E1520;
+  --bun:#E79A4F; --bun-bg:#2E2216; --fill:#5DBB85; --fill-bg:#16281E;
+  --ok:#5DBB85; --ok-bg:#16281E; --warn:#E2B04A; --warn-bg:#2C2414; --bad:#EF7B72; --bad-bg:#311A19;
+  --focus:#7FA6F0; color-scheme:dark }
+*{box-sizing:border-box}
+/* Скрытые вкладки не должны отображаться, даже если у них display:grid */
+[hidden]{display:none !important}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--f-body);font-variant-numeric:tabular-nums}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1240px;margin:0 auto}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.hrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12px}
+.brand{display:flex;flex-direction:column;gap:1px;margin-right:auto;min-width:0}
+.brand b{font:700 17px/1.1 var(--f-display);letter-spacing:.2px;color:var(--navy)}
+.brand span{font-size:12.5px;color:var(--muted)}
+.tabs{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:999px}
+.tabs button{border:0;background:transparent;color:var(--muted);font:600 14px var(--f-body);padding:7px 14px;border-radius:999px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+select,input,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+textarea{resize:vertical;width:100%;min-height:64px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+main{padding-block:18px 40px}
+.demo{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:14px}
+.note{color:var(--muted);font-size:13px}
+.empty{border:1.5px dashed var(--line);border-radius:var(--r);padding:28px;text-align:center;color:var(--muted)}
+h2{font:700 15px/1.2 var(--f-display);letter-spacing:.2px;margin:0 0 10px;color:var(--navy);text-wrap:balance}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+/* send view */
+.send{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px;align-items:start}
+@media (max-width:820px){.send{grid-template-columns:1fr}}
+.classbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chipbtn{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:5px 12px;font:600 13px var(--f-body);cursor:pointer}
+.chipbtn[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:var(--navy-fg)}
+.slist{display:flex;flex-direction:column;gap:6px}
+.srow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:8px 10px;cursor:pointer;font:inherit}
+.srow[aria-current="true"]{border-color:var(--navy);box-shadow:inset 3px 0 0 var(--navy)}
+.srow .n{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.srow .p{font-size:12.5px;color:var(--muted);grid-column:1}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap;align-self:start}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.bad{background:var(--bad-bg);color:var(--bad)}
+.compose{display:flex;flex-direction:column;gap:12px}
+.chead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.chead .t{font:700 18px/1.2 var(--f-display);color:var(--fg)}
+.chead .s{font-size:13px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:520px){.grid2{grid-template-columns:1fr}}
+label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600;color:var(--muted);min-width:0}
+.layer{border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.layer .lt{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase}
+.layer.bun{background:var(--bun-bg)} .layer.bun .lt{color:var(--bun)}
+.layer.top{border-radius:28px 28px 10px 10px;padding-top:12px}
+.layer.bot{border-radius:10px 10px 22px 22px;padding-bottom:12px}
+.layer.fill{background:var(--fill-bg)} .layer.fill .lt{color:var(--fill)}
+.preview{background:var(--sunk);border-radius:8px;padding:10px 12px;white-space:pre-wrap;font-size:14px;min-height:60px;overflow-wrap:anywhere}
+.checks{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.checks .x{color:var(--bad);font-weight:600} .checks .v{color:var(--ok)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:10px 16px;font:600 14px var(--f-body);cursor:pointer;text-decoration:none}
+.btn.primary{background:var(--ok);color:var(--surface)}
+.btn.primary[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:var(--sunk);color:var(--fg)}
+.toast{font-size:13.5px;font-weight:600;padding:8px 12px;border-radius:8px}
+.toast.ok{background:var(--ok-bg);color:var(--ok)} .toast.bad{background:var(--bad-bg);color:var(--bad)}
+.hist{display:flex;flex-direction:column;gap:6px}
+.hist details{background:var(--sunk);border-radius:8px;padding:6px 10px;font-size:13.5px}
+.hist summary{cursor:pointer}
+.hist pre{white-space:pre-wrap;font:inherit;margin:6px 0 2px;overflow-wrap:anywhere}
+/* panel view */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
+@media (max-width:820px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.tile .k{font-size:12.5px;color:var(--muted);font-weight:600}
+.tile .v{font:700 28px/1.15 var(--f-display);margin-top:4px}
+.tile .h{font-size:12.5px;color:var(--muted);margin-top:2px}
+.tile.bad .v{color:var(--bad)} .tile.ok .v{color:var(--ok)} .tile.warn .v{color:var(--warn)}
+.cols{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;align-items:start}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.num,th.num{text-align:right}
+.bar{height:8px;background:var(--sunk);border-radius:99px;overflow:hidden;min-width:70px}
+.bar i{display:block;height:100%;border-radius:99px}
+.stack{display:flex;flex-direction:column;gap:16px}
+.att{display:flex;flex-direction:column;gap:6px}
+.att div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-block:6px;font-size:14px}
+/* roster view */
+.forms{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media (max-width:820px){.forms{grid-template-columns:1fr}}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fgrid .full{grid-column:1/-1}
+.del{border:0;background:none;color:var(--bad);font:600 13px var(--f-body);cursor:pointer;padding:4px}
+@media (prefers-reduced-motion:no-preference){.toast{animation:fade .25s ease}@keyframes fade{from{opacity:.3}to{opacity:1}}}
+
+/* #34: compact parent editor */
+.afs-namecell{display:flex;align-items:center;gap:5px}.afs-namecell b{overflow-wrap:anywhere}
+.afs-pencil{display:inline-flex;align-items:center;justify-content:center;flex:none;width:27px;height:27px;border:1px solid transparent;border-radius:7px;background:transparent;color:#1F3A5F;cursor:pointer}.afs-pencil:hover,.afs-pencil:focus-visible{background:#EDF0F4;border-color:#D8DEE6}
+.afs-namecell input[readonly]{border:0;background:transparent;box-shadow:none;padding:7px 0;cursor:default}
+.afs-phonebox{display:flex;align-items:center;gap:5px;border:1px solid #D8DEE6;border-radius:8px;background:white;padding:0 7px;min-width:192px}.afs-prefix{font-weight:700;color:#1B2433;white-space:nowrap}
+.afs-phonebox input{min-width:0!important;width:134px!important;flex:1;border:0!important;box-shadow:none!important;background:transparent!important;padding:9px 0!important}.afs-phone-icon{width:19px;height:19px;flex:none;display:inline-flex}
+
+
+/* AFS #36 staff credentials and editor */
+.afs-staff-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.afs-staff-header .actions{max-width:600px}
+.afs-login{font-size:13px;white-space:nowrap}
+.afs-copy,.afs-issue-button{font:600 12px var(--f-body);color:var(--navy);background:transparent;border:0;cursor:pointer;text-decoration:underline;display:inline-block;margin:3px 5px;padding:4px}
+.afs-credential-cell code{display:inline-block;border-radius:5px;background:var(--sunk);padding:4px 6px;font-size:12px}
+.afs-staff-pencil{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--navy);cursor:pointer}
+.afs-staff-pencil:hover{background:var(--sunk)}
+.afs-staff-dialog{width:min(620px,calc(100vw - 24px));max-height:85vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg);padding:24px;box-shadow:0 15px 55px rgba(0,0,0,.22)}
+.afs-staff-dialog::backdrop{background:rgba(12,21,36,.55)}
+.afs-dialog-close{float:right;border:0;background:transparent;color:var(--fg);font-size:26px;cursor:pointer}
+.afs-assignments,.afs-add-assignment{border:1px solid var(--line);border-radius:9px;padding:12px;display:grid;gap:10px}
+.afs-assignment{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:6px;font-size:13px}
+
+
+/* AFS #37: unified teacher panel */
+.afs-panel-head{margin-bottom:14px}.afs-panel-tools{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.afs-panel-select{max-width:200px;min-width:120px;flex:0 1 190px}
+.afs-panel-select select{width:100%}
+.afs-parents-collapse{margin:0 0 16px;padding:0;overflow:hidden}
+.afs-parents-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;cursor:pointer;list-style:none;padding:14px}
+.afs-parents-summary::-webkit-details-marker{display:none}
+.afs-parents-title{font-weight:700;flex:1;min-width:200px;color:var(--navy)}
+.afs-parents-completion{font-weight:600;color:var(--muted);font-size:13px}
+.afs-chevron{display:inline-block;margin-left:5px;transition:transform .2s}
+.afs-parents-collapse[open] .afs-chevron{transform:rotate(180deg)}
+.afs-parent-bar{height:7px;flex-basis:100%;background:var(--sunk);border-radius:100px;overflow:hidden}
+.afs-parent-bar i{display:block;background:var(--fill);height:100%;border-radius:100px}
+#afs-panel-parents-body{padding:0 14px 14px}
+#afs-panel-parents-body>.panel{border:0;padding:4px 0;margin:0!important}
+.afs-panel-metrics{margin:0 0 16px}
+.afs-history-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.afs-history-filters{display:flex;gap:5px;flex-wrap:wrap}
+.afs-history-filters .chipbtn{border-radius:8px}
+.afs-review{border:1px solid var(--line);border-radius:9px;margin:8px 0;padding:10px 12px}
+.afs-review>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px;list-style:none}
+.afs-review>summary::-webkit-details-marker{display:none}
+.afs-review>summary>span:nth-child(2){color:var(--muted);font-size:12px;flex:1;min-width:160px}
+.afs-review .layer{margin-top:9px}
+
+</style>
+
+<header><div class="wrap hrow">
+  <div class="brand"><b>Обратная связь AFS</b><a href="/" style="font-size:12px;color:var(--muted);text-decoration:underline;margin-top:4px">← Главная Future School</a><span id="account-role-label">Вход в систему</span></div>
+  <div class="who"><span id="me">Не авторизован</span><button id="change-password-open" class="btn ghost" type="button" hidden>Сменить пароль</button><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
+  <nav class="tabs" role="tablist" aria-label="Разделы">
+    <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
+    <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
+    <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button>
+    <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
+    <button role="tab" id="tab-parent" data-tab="parent" aria-selected="false" hidden>Мои дети</button>
+    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Управление</button>
+  </nav>
+</div></header>
+
+<div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Email или номер телефона<input id="login-email" type="text" autocomplete="username" placeholder="email@example.com или +7 777 123 45 67" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
+<div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
+<section id="change-password-panel" class="wrap" hidden style="max-width:520px;margin-top:18px">
+  <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose">
+    <label>Новый пароль (минимум 12 символов)<input id="change-password-new" type="password" minlength="12" autocomplete="new-password" required></label>
+    <label>Повторить новый пароль<input id="change-password-confirm" type="password" minlength="12" autocomplete="new-password" required></label>
+    <div class="actions"><button class="btn primary" type="submit">Сохранить пароль</button><button id="change-password-cancel" class="btn ghost" type="button">Отмена</button></div>
+    <div id="change-password-result" class="note" role="status"></div>
+  </form></div>
+</section>
+<main class="wrap" id="app-main" hidden>
+  <section id="v-send" class="send">
+    <div class="panel">
+      <h2>Ученики класса</h2>
+      <div class="classbar" id="classbar"></div>
+      <div class="slist" id="slist"><div class="empty">Загружаем список учеников…</div></div>
+    </div>
+    <div class="panel" id="composer"><div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div></div>
+  </section>
+  <section id="v-panel" hidden></section>
+  <section id="v-class" hidden></section>
+  <section id="v-roster" hidden></section>
+  <section id="v-manage" hidden></section>
+  <section id="v-parent" hidden></section>
+</main>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const SUPABASE_URL = 'https://wvkcafxruzguifybeeab.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
+// Invitation/recovery links arrive with a one-time Supabase Auth token.
+const inviteLinkType = new URLSearchParams(location.hash.slice(1)).get('type');
+const isInviteLink = inviteLinkType === 'invite' || inviteLinkType === 'recovery';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{detectSessionInUrl:true}});
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state={user:null, profile:null, roles:[],classes:[],students:[],subjects:[],assignments:[],feedback:[],staffFeed:[],selectedClass:null,selectedStudent:null,panelClass:null, tab:'send',busy:false};
+const msg = (e)=>e?.message||'Неизвестная ошибка';
+const parentTemporaryCredentials=new Map(); // Только в памяти вкладки, не localStorage.
+const staffTemporaryCredentials=new Map(); // Только новые пароли этой сессии.
+
+let settingInvitationPassword = isInviteLink;
+function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
+// Clear, reliable feedback when completing an email invitation.
+const passwordForm = $('#set-password-form');
+const passwordButton = passwordForm.querySelector('button[type="submit"]');
+const passwordOutput = $('#set-password-result');
+function passwordNotice(text, failed=false) {
+  passwordOutput.className = failed ? 'toast bad' : 'note';
+  passwordOutput.textContent = text;
+}
+// Browser's built-in validation may silently prevent submit on some devices.
+passwordForm.noValidate = true;
+passwordForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const pwd = $('#new-password').value;
+  const confirmPwd = $('#confirm-password').value;
+  if (!pwd || !confirmPwd) { passwordNotice('Заполните оба поля.', true); return; }
+  if (pwd.length < 12) { passwordNotice('Пароль должен содержать минимум 12 символов.', true); return; }
+  if (pwd !== confirmPwd) { passwordNotice('Пароли не совпадают.', true); return; }
+  passwordButton.disabled = true;
+  passwordNotice('Проверяем приглашение…');
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      passwordNotice('Ссылка приглашения истекла или не создала сессию. Запросите новое приглашение.', true);
+      return;
+    }
+    passwordNotice('Сохраняем пароль…');
+    const { error } = await supabase.auth.updateUser({ password: pwd });
+    if (error) { passwordNotice('Ошибка: ' + msg(error), true); return; }
+    settingInvitationPassword = false;
+    history.replaceState(null, '', location.pathname + location.search);
+    passwordNotice('Пароль установлен!');
+    const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+    await enter(refreshedSession || session);
+  } catch (error) {
+    passwordNotice('Не удалось установить пароль: ' + msg(error), true);
+  } finally {
+    passwordButton.disabled = false;
+  }
+});
+
+async function loadData(){
+  const queries=[supabase.from('profiles').select('id,full_name,email').eq('id',state.user.id).maybeSingle(),supabase.from('user_roles').select('role').eq('user_id',state.user.id),supabase.from('classes').select('id,name,grade').order('name'),supabase.from('students').select('id,class_id,full_name,status').eq('status','active').order('full_name'),supabase.from('subjects').select('id,name').eq('is_active',true).order('name'),supabase.from('teacher_assignments').select('class_id,subject_id,assignment_type,user_id').eq('user_id',state.user.id),supabase.from('feedback').select('id,student_id,subject_id,author_id,kind,praise,recommendations,support,created_at,published_at,status').order('created_at',{ascending:false}).limit(1000)];
+  const results=await Promise.all(queries);
+  const labels=['Профиль','Роли','Классы','Ученики','Предметы','Назначения','Отзывы'];
+  const errors=results.map((r,i)=>r.error?labels[i]+': '+msg(r.error):null).filter(Boolean);
+  if(errors.length) throw Error(errors.join(' | '));
+  state.profile=results[0].data;state.roles=results[1].data.map(x=>x.role);state.classes=results[2].data;state.students=results[3].data;state.subjects=results[4].data;state.assignments=results[5].data;state.feedback=results[6].data;
+  // Aggregated feed is server-authorized; never expose parent receipts via direct table reads.
+  const {data:staffFeed,error:feedError}=await supabase.rpc('afs_staff_feedback_feed');
+  if(feedError) throw Error('История преподавателей: '+msg(feedError)+' (выполните SQL №28)');
+  state.staffFeed=staffFeed||[];
+  // Keep the selected class inside the teacher's assigned workload.
+  const canSeeAllClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
+  const selectableClasses=canSeeAllClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
+  if(!selectableClasses.some(c=>c.id===state.selectedClass))state.selectedClass=selectableClasses[0]?.id??null;
+  $('#me').textContent=state.profile?.full_name||state.user.email;
+  // Показываем должность, а не рекламный подзаголовок. Роли читаются из user_roles.
+  const roleLabels = {
+    superadmin: 'Суперадмин',
+    director: 'Директор',
+    deputy: 'Завуч',
+    teacher: 'Преподаватель',
+    tutor: 'Куратор',
+    parent: 'Родитель',
+    student: 'Ученик'
+  };
+  const rolePriority = ['superadmin','director','deputy','teacher','tutor','parent','student'];
+  const mainRole = rolePriority.find(role => state.roles.includes(role));
+  $('#account-role-label').textContent = roleLabels[mainRole] || 'Пользователь';
+  const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
+  $('#tab-parent').hidden=!state.roles.includes('parent');
+  $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>a.assignment_type==='homeroom'));
+  if(state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher')){state.tab='parent';}
+  $('#tab-manage').hidden=!isAdmin;
+  // For teachers, only Send + Panel. Admin roster remains for student import.
+  $('#tab-class').hidden=true;
+  $('#tab-roster').hidden=!isAdmin;
+  if(state.tab==='class'||(state.tab==='roster'&&!isAdmin))state.tab='panel';
+  for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
+  if(!isAdmin && state.tab==='manage')state.tab='send';
+  for(const section of ['send','panel','class','roster','manage','parent']){
+    $('#v-'+section).hidden=section!==state.tab;
+    $('#tab-'+section).setAttribute('aria-selected',String(section===state.tab));
+  }
+  render();
+}
+async function enter(session){
+  if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
+  state.user=session.user; setLogin(true);
+  try{await loadData()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
+}
+$('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
+$('#logout').addEventListener('click',async()=>{parentTemporaryCredentials.clear();await supabase.auth.signOut();await enter(null)});
+$('#change-password-open').onclick=()=>{$('#change-password-panel').hidden=!$('#change-password-panel').hidden;};
+$('#change-password-cancel').onclick=()=>{$('#change-password-panel').hidden=true;};
+$('#change-password-form').onsubmit=async e=>{
+ e.preventDefault();const p=$('#change-password-new').value,c=$('#change-password-confirm').value,output=$('#change-password-result');
+ if(p.length<12 || p!==c){output.textContent='Введите одинаковые пароли длиной не менее 12 символов';return;}
+ output.textContent='Сохраняем…';const {error}=await supabase.auth.updateUser({password:p});
+ if(error){output.textContent='Ошибка: '+msg(error);output.className='toast bad';return;}
+ output.textContent='Пароль изменён';output.className='toast ok';$('#change-password-form').reset();
+};
+
+function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
+function pickTab(tab){if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
+function render(){if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
+function renderList(){
+  const allClasses=state.roles.includes('superadmin')||state.roles.includes('deputy')||state.roles.includes('director');
+  const visibleClasses=allClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
+  $('#classbar').innerHTML=visibleClasses.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
+  $('#slist').innerHTML=classStudents().map(s=>{let last=state.feedback.find(f=>f.student_id===s.id&&f.status==='published');return `<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill ${last?'ok':'bad'}">${last?'Есть отзыв':'Нет отзыва'}</span></button>`}).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
+  document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.selectedClass=Number(b.dataset.class);state.selectedStudent=null;render()});
+  document.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>{state.selectedStudent=Number(b.dataset.student);render()});
+}
+function ownSubjects(){
+  // The superadmin can select any active subject in any class.
+  // Other teachers see only subject assignments for the selected class.
+  if(state.roles.includes('superadmin'))return state.subjects;
+  const subjectIds=new Set(state.assignments.filter(a=>a.class_id===state.selectedClass&&a.assignment_type==='subject_teacher').map(a=>a.subject_id));
+  return state.subjects.filter(s=>subjectIds.has(s.id));
+}
+// Only files associated with feedback visible under RLS can be listed/opened.
+async function showFeedbackFiles(feedbackIds, container) {
+  if (!container?.isConnected || !feedbackIds.length) return;
+  const {data,error}=await supabase.from('feedback_attachments')
+    .select('id,feedback_id,storage_path,original_filename,mime_type')
+    .in('feedback_id',feedbackIds);
+  if (!container.isConnected) return;
+  if(error){container.textContent='Не удалось загрузить вложения: '+msg(error);return;}
+  for (const host of container.querySelectorAll('[data-files-for]')) {
+    const fid=Number(host.dataset.filesFor);
+    const attachments=(data||[]).filter(a=>a.feedback_id===fid);
+    host.replaceChildren();
+    if(!attachments.length) continue;
+    const title=document.createElement('div');title.className='note';title.textContent='Прикреплённые работы:';host.append(title);
+    for(const file of attachments){
+      const button=document.createElement('button');
+      button.type='button';button.className='btn ghost';
+      button.style.margin='4px 6px 4px 0';
+      button.textContent='📎 '+file.original_filename;
+      button.onclick=async()=>{
+        button.disabled=true;
+        const {data:link,error:linkError}=await supabase.storage.from('feedback-files')
+          .createSignedUrl(file.storage_path,60);
+        button.disabled=false;
+        if(linkError||!link?.signedUrl){alert('Не удалось открыть работу: '+msg(linkError));return;}
+        window.open(link.signedUrl,'_blank','noopener,noreferrer');
+      };
+      host.append(button);
+    }
+  }
+}
+function renderComposer(){
+  const s=state.students.find(x=>x.id===state.selectedStudent);
+  if(!s){$('#composer').innerHTML='<div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div>';return;}
+  const allowed=ownSubjects();
+  const history=state.staffFeed.filter(f=>f.student_id===s.id);
+  $('#composer').innerHTML=`<div class="compose"><div class="chead"><div><div class="t">${esc(s.full_name)}</div><div class="s">${esc(state.classes.find(c=>c.id===s.class_id)?.name||'')}</div></div></div>
+  <div class="grid2"><label>Предмет<select id="f-subject">${allowed.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label></div>
+  <div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="f-praise" placeholder="Что ребёнку удалось"></textarea></div>
+  <div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="f-recs" placeholder="Что нужно улучшить"></textarea></div>
+  <div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="f-support" placeholder="Поддержка и следующий шаг"></textarea></div>
+  <label>Прикрепить работу ученика (до 5 файлов, каждый до 10 МБ)<input type="file" id="f-attachments" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></label>
+  <div><h2>Предпросмотр</h2><div id="preview" class="preview"></div></div>
+  <div class="actions"><button id="publish" class="btn primary" type="button" ${allowed.length?'':'disabled'}>Опубликовать обратную связь</button></div>
+  <div id="notice" role="status" class="note">${allowed.length?'После публикации запись будет доступна в базе. WhatsApp пока не отправляется.':'Нет назначения на предмет этого класса — публикация недоступна.'}</div>
+  <h2>История по ученику</h2><div class="hist">${history.map(f=>`<details><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'')} · ${esc(f.author_name||'Преподаватель')} · ${esc(receiptLabel(f))}</summary><pre>${esc([f.praise,f.recommendations,f.support].join('\n\n'))}</pre><div class="note" style="margin-top:7px">Автор: ${esc(f.author_name)} · ${esc(new Date(f.published_at).toLocaleString('ru-RU'))}</div>${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`).join('')||'<span class="note">Записей пока нет.</span>'}</div></div>`;
+  showFeedbackFiles(history.map(f=>f.id),$('#composer'));
+  const preview=()=>{$('#preview').textContent=[$('#f-praise').value,$('#f-recs').value,$('#f-support').value].filter(Boolean).join('\n\n')||'Текст появится здесь'};
+  ['#f-praise','#f-recs','#f-support'].forEach(q=>$(q).addEventListener('input',preview));
+  preview();
+  $('#publish').addEventListener('click',async()=>{
+   if(state.busy)return;const button=$('#publish'); const notice=$('#notice');
+   const params={p_student_id:s.id,p_subject_id:Number($('#f-subject').value),p_kind:'weekly',p_praise:$('#f-praise').value,p_recommendations:$('#f-recs').value,p_support:$('#f-support').value,p_topic:null,p_error_type:null};
+   if([params.p_praise,params.p_recommendations,params.p_support].some(v=>v.trim().length<10)){notice.textContent='Заполни все три поля: минимум 10 символов каждое.';return;}
+   const files=Array.from($('#f-attachments').files||[]);
+   const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
+   if(files.length>5||files.some(f=>!mimeExt[f.type]||f.size<1||f.size>10485760||f.name.length>200)){
+     notice.textContent='Можно выбрать до 5 файлов JPG, PNG, WebP или PDF, до 10 МБ каждый.';return;
+   }
+   state.busy=true;button.disabled=true;notice.textContent='Публикуем отзыв…';
+   const {data,error}=await supabase.rpc('publish_feedback',params);
+   if(error){state.busy=false;button.disabled=false;notice.textContent='Ошибка: '+msg(error);return;}
+   let problems=[];
+   for(const file of files){
+     try{
+       const path=`${data}/${crypto.randomUUID()}.${mimeExt[file.type]}`;
+       const {error:registerError}=await supabase.rpc('afs_register_attachment',{
+         p_feedback_id:data,p_storage_path:path,p_original_filename:file.name,
+         p_mime_type:file.type,p_size_bytes:file.size
+       });
+       if(registerError)throw registerError;
+       const {error:uploadError}=await supabase.storage.from('feedback-files')
+         .upload(path,file,{contentType:file.type,upsert:false});
+       if(uploadError)throw uploadError;
+     }catch(e){problems.push(`${file.name}: ${msg(e)}`);}
+   }
+   state.busy=false;
+   const resultMessage=problems.length
+     ?`Отзыв №${data} опубликован, но некоторые файлы не загрузились: ${problems.join('; ')}`
+     :`Отзыв №${data} опубликован. Файлов прикреплено: ${files.length}.`;
+   try{await loadData();if($('#notice'))$('#notice').textContent=resultMessage;}
+   catch(e){if($('#notice'))$('#notice').textContent=resultMessage+' Обновление списка: '+msg(e);}
+  });
+}
+function receiptLabel(f){
+  const total=Number(f.parents_total||0),opened=Number(f.opened_count||0),ack=Number(f.acknowledged_count||0);
+  if(!total)return 'Родительский аккаунт пока не привязан';
+  if(ack===total)return 'Ознакомились: '+ack+' из '+total;
+  if(ack)return 'Ознакомились: '+ack+' из '+total;
+  if(opened)return 'Просмотрено · подтверждения нет';
+  return 'Не просмотрено';
+}
+function receiptBreakdown(f){
+  const details=Array.isArray(f.receipt_details)?f.receipt_details:[];
+  if(!details.length)return '<p class="note">Нет привязанных родительских аккаунтов.</p>';
+  return `<details style="margin:8px 0"><summary>Родители: ${esc(receiptLabel(f))}</summary><div class="att">${details.map(p=>{
+    const when=p.acknowledged_at||p.opened_at;
+    const status=p.acknowledged_at?'Ознакомлен':p.opened_at?'Просмотрено':'Не просмотрено';
+    return `<div><span>${esc(p.parent_name)}</span><span>${esc(status)}${when?' · '+esc(new Date(when).toLocaleString('ru-RU')):''}</span></div>`;
+  }).join('')}</div></details>`;
+}
+function renderMyClass(){
+  const root=$('#v-class');
+  const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
+  const allowedClasses=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  if(!allowedClasses.length){root.innerHTML='<div class="panel"><p>Нет назначенного классного руководства.</p></div>';return;}
+  const selected=allowedClasses.some(c=>c.id===state.selectedClass)?state.selectedClass:allowedClasses[0].id;
+  const pupils=state.students.filter(s=>s.class_id===selected);
+  const visibleFeed=state.staffFeed.filter(f=>f.class_id===selected);
+  const countConfirmed=visibleFeed.filter(f=>Number(f.parents_total)>0&&Number(f.parents_total)===Number(f.acknowledged_count)).length;
+  const rows=pupils.map(st=>{
+    const list=visibleFeed.filter(f=>f.student_id===st.id);
+    return `<details class="panel" style="margin:8px 0"><summary><b>${esc(st.full_name)}</b> · ${list.length} отзыв(ов)</summary>
+    ${list.map(f=>`<details class="panel" style="margin:9px 0"><summary>${esc(new Date(f.published_at).toLocaleString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Предмет')} · ${esc(f.author_name)} · ${esc(receiptLabel(f))}</summary>
+    <div class="layer bun top" style="margin-top:10px"><b>Похвала</b><div>${esc(f.praise)}</div></div>
+    <div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div>
+    <div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div>
+    ${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</details>`;
+  }).join('');
+  root.innerHTML=`<div class="panel"><h2>Мой класс · отзывы всех предметников</h2>
+    <p class="note">Просмотр опубликованных отзывов. Редактировать чужие записи нельзя.</p>
+    <label>Класс<select id="my-class-select">${allowedClasses.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <div class="tiles" style="margin-top:12px"><div class="tile"><div class="k">Учеников</div><div class="v">${pupils.length}</div></div>
+    <div class="tile"><div class="k">Опубликовано отзывов</div><div class="v">${visibleFeed.length}</div></div>
+    <div class="tile"><div class="k">Все родители ознакомились</div><div class="v">${countConfirmed}</div></div></div>
+    ${rows||'<div class="empty">Ученики не найдены.</div>'}</div>`;
+  $('#my-class-select').onchange=e=>{state.selectedClass=Number(e.target.value);renderMyClass()};
+  showFeedbackFiles(visibleFeed.map(f=>f.id),root);
+  renderClassParentEditor(selected,root);
+}
+// AFS №29: классная таблица родителей — одна массовая операция сохранения.
+async function renderClassParentEditor(classId,root){
+  const host=document.createElement('div'); host.className='panel';host.style.marginTop='16px';
+  host.innerHTML='<h2>Родители и телефоны класса</h2><p class="note">Загружаем таблицу…</p>';
+  root.appendChild(host);
+  const {data,error}=await supabase.rpc('afs_class_parent_grid',{p_class_id:classId});
+  if(!host.isConnected)return;
+  if(error){host.innerHTML=`<div class="toast bad">Не удалось открыть таблицу родителей: ${esc(msg(error))}. Выполните SQL №29.</div>`;return;}
+  const students=data?.students||[];
+  const lines=[];
+  const pendingStudentNames=new Map();
+  for(const s of students){
+    if(s.parents?.length){for(const p of s.parents)lines.push({student_id:s.student_id,student_name:s.student_name,parent_id:p.parent_id,parent_name:p.parent_name||'',initial_parent_name:p.parent_name||'',phone:p.phone||'',opt_in:!!p.whatsapp_opt_in,has_account:!!p.has_account});}
+    else lines.push({student_id:s.student_id,student_name:s.student_name,parent_id:null,parent_name:'',phone:'',opt_in:false,has_account:false});
+  }
+  const draw=()=>{
+    const complete=students.filter(st=>lines.some(r=>r.student_id===st.student_id&&r.parent_name.trim()&&/^\+7[0-9]{10}$/.test(normalizeKzPhone(r.phone)))).length;
+    const percent=students.length?Math.round(complete*100/students.length):0;
+    host.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>Родители и телефоны класса</h2><span class="pill ${percent===100?'ok':''}">${percent}% · ${complete} из ${students.length}</span></div>
+      <p class="note">Заполните строки класса, затем один раз нажмите «Сохранить изменения». Для второго родителя используйте кнопку «+ Родитель». Номер телефона служит логином. Новый временный пароль появится только после выдачи доступа или сброса. Текущий пароль посмотреть нельзя.</p>
+      <div class="tw"><table><thead><tr><th>Ученик</th><th>ФИО родителя</th><th>Телефон / логин</th><th>Доступ и временный пароль</th><th></th></tr></thead><tbody>
+      ${lines.map((r,i)=>`<tr><td style="min-width:155px"><div class="afs-namecell"><b>${esc(r.student_name)}</b><button type="button" class="afs-pencil" data-edit-student-inline="${i}" title="Редактировать ФИО ученика" aria-label="Редактировать ФИО ученика">${afsPencilSvg}</button></div></td>
+        <td><div class="afs-namecell"><input style="min-width:155px" data-row="${i}" data-field="parent_name" value="${esc(r.parent_name)}" placeholder="ФИО родителя" maxlength="160" ${r.parent_id?"readonly":""}><button type="button" class="afs-pencil" data-edit-parent-inline="${i}" title="Редактировать ФИО родителя" aria-label="Редактировать ФИО родителя">${afsPencilSvg}</button></div></td>
+        <td><div class="afs-phonebox"><span class="afs-prefix">+7</span><input data-row="${i}" data-field="phone" type="tel" inputmode="numeric" autocomplete="off" value="${esc(afsDisplayLocalPhone(r.phone))}" placeholder="XXX XXX XX XX"><span class="afs-phone-icon" data-phone-check="${i}"></span></div></td>
+        <td style="min-width:185px"><span class="note">${r.has_account?'Аккаунт существует':'Нет аккаунта'}</span>
+          ${r.parent_id?(r.has_account?(state.roles.some(x=>x==='superadmin'||x==='deputy')?`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="reset">Сбросить пароль</button><button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="enable_phone">Вход по телефону</button>`:''):`<button type="button" class="btn ghost" data-parent-account="${r.parent_id}" data-action="create">Выдать доступ</button>`):'<span class="note">Сначала сохраните строку</span>'}
+          ${parentTemporaryCredentials.has(r.parent_id)?`<div class="toast ok">Новый пароль: <b>${esc(parentTemporaryCredentials.get(r.parent_id))}</b></div>`:''}</td>
+        <td><button class="btn ghost" type="button" data-add-parent="${r.student_id}" title="Добавить строку для второго родителя">+ Родитель</button></td></tr>`).join('')}</tbody></table></div>
+      <p class="note">Сохранять можно постепенно: пустые номера разрешены. Согласие на WhatsApp учитывается отдельно; сохранение таблицы не меняет пароли и не отправляет сообщения.</p>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
+        <button type="button" id="save-class-parents" class="btn primary">Сохранить изменения по классу</button>
+        ${parentTemporaryCredentials.size?'<button type="button" id="download-parent-passwords" class="btn ghost">Скачать выданные временные пароли (CSV)</button>':''}
+      </div><div id="save-class-parents-result" class="note" role="status"></div>`;
+    const exportButton=host.querySelector('#download-parent-passwords');
+    if(exportButton)exportButton.onclick=()=>{
+      const items=lines.filter(r=>parentTemporaryCredentials.has(r.parent_id));
+      const csv=[['Ученик','Родитель','Логин','Временный пароль'],...items.map(r=>[r.student_name,r.parent_name,normalizeKzPhone(r.phone),parentTemporaryCredentials.get(r.parent_id)])]
+        .map(fields=>fields.map(value=>'"'+String(value||'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+      const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='AFS_родители_временные_пароли.csv';a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),3000);
+    };
+    // Only the ten local digits belong to the editable input; +7 is a separate prefix.
+    // Keep caret location stable when grouping spaces appear or disappear.
+    host.querySelectorAll('[data-field]').forEach(input=>{
+      if(input.dataset.field!=='phone'){
+        input.addEventListener('input',()=>{lines[Number(input.dataset.row)][input.dataset.field]=input.value;});
+        return;
+      }
+      const row=Number(input.dataset.row);
+      const storePhone=(digits,caretDigits)=>{
+        const local=digits.slice(0,10);
+        lines[row].phone=local ? '+7'+local : '';
+        input.value=afsFormatLocalDigits(local);
+        afsSetPhoneIcon(host,row,lines[row].phone);
+        if(caretDigits!==undefined){
+          let offset=0,seen=0;
+          while(offset<input.value.length && seen<caretDigits){
+            if(/\d/.test(input.value[offset]))seen++;
+            offset++;
+          }
+          input.setSelectionRange(offset,offset);
+        }
+      };
+      afsSetPhoneIcon(host,row,lines[row].phone);
+      input.addEventListener('beforeinput',event=>{
+        // Deleting an auto-inserted space should also remove the preceding digit.
+        if(event.inputType!=='deleteContentBackward' || input.selectionStart!==input.selectionEnd)return;
+        const caret=input.selectionStart;
+        if(!caret || input.value[caret-1]!==' ')return;
+        event.preventDefault();
+        const old=afsLocalDigits(lines[row].phone);
+        const n=(input.value.slice(0,caret).match(/\d/g)||[]).length;
+        if(n>0)storePhone(old.slice(0,n-1)+old.slice(n),n-1);
+      });
+      input.addEventListener('input',event=>{
+        const current=input.value;
+        const caret=input.selectionStart??current.length;
+        let local=current.replace(/\D/g,'');
+        let digitsBefore=(current.slice(0,caret).match(/\d/g)||[]).length;
+        // Full Kazakhstan numbers can be pasted as +7..., 7... or 8....
+        if(local.length===11 && /^[78]/.test(local)){
+          local=local.slice(1);
+          digitsBefore=Math.max(0,digitsBefore-1);
+        }
+        // A lone domestic 8 is a calling prefix, not a digit of the operator code.
+        if(local==='8' && !afsLocalDigits(lines[row].phone)){
+          local='';digitsBefore=0;
+        }
+        // Browser deleted only a formatting space: remove preceding digit as expected.
+        const previous=afsLocalDigits(lines[row].phone);
+        if(event.inputType==='deleteContentBackward' && local===previous && current!==afsFormatLocalDigits(previous)){
+          const n=Math.max(0,digitsBefore-1);
+          local=previous.slice(0,n)+previous.slice(n+1);
+          digitsBefore=n;
+        }
+        storePhone(local,digitsBefore);
+      });
+      input.addEventListener('paste',event=>{
+        const pasted=event.clipboardData?.getData('text')||'';
+        const digits=pasted.replace(/\D/g,'');
+        if(digits.length===10 || digits.length===11 && /^[78]/.test(digits)){
+          event.preventDefault();
+          const local=digits.length===11?digits.slice(1):digits;
+          storePhone(local,local.length);
+        }
+      });
+    });
+    host.querySelectorAll('[data-edit-parent-inline]').forEach(btn=>btn.onclick=()=>{
+      const input=host.querySelector('[data-row="'+btn.dataset.editParentInline+'"][data-field="parent_name"]');
+      input.readOnly=!input.readOnly;if(!input.readOnly)input.focus();
+    });
+    host.querySelectorAll('[data-edit-student-inline]').forEach(btn=>btn.onclick=()=>{
+      const row=lines[Number(btn.dataset.editStudentInline)];const newName=prompt('Исправьте ФИО ученика:',row.student_name);
+      if(newName===null||newName.trim()===row.student_name)return;
+      if(newName.trim().length<3){alert('Введите корректное ФИО');return;}
+      pendingStudentNames.set(row.student_id,newName.trim());
+      lines.filter(x=>x.student_id===row.student_id).forEach(x=>x.student_name=newName.trim());draw();
+    });
+    host.querySelectorAll('[data-add-parent]').forEach(button=>button.onclick=()=>{
+      // Сначала собираем введённые значения, потом перерисовываем строки.
+      host.querySelectorAll('[data-field]').forEach(el=>{if(el.dataset.field!=='phone')lines[Number(el.dataset.row)][el.dataset.field]=el.value;});
+      const student=students.find(x=>x.student_id===Number(button.dataset.addParent));
+      lines.push({student_id:student.student_id,student_name:student.student_name,parent_id:null,parent_name:'',phone:'',opt_in:false,has_account:false});draw();
+    });
+    host.querySelectorAll('[data-parent-account]').forEach(button=>button.onclick=async()=>{
+      const parentId=Number(button.dataset.parentAccount),action=button.dataset.action;
+      if(action==='create'&&!confirm('Создать личный кабинет этому родителю и выдать временный пароль?'))return;
+      if(action==='reset'&&!confirm('Сбросить пароль? Прежний пароль перестанет работать.'))return;
+      if(action==='enable_phone'&&!confirm('Разрешить вход по телефону для этого существующего аккаунта?'))return;
+      button.disabled=true;
+      const oldText=button.textContent;button.textContent='Обрабатываем…';
+      try{
+        const {data,error}=await supabase.functions.invoke('parent-access',{body:{parent_id:parentId,action}});
+        if(error||data?.error)throw Error(data?.error||error.message);
+        if(data.password)parentTemporaryCredentials.set(parentId,data.password);
+        alert(data.message||'Готово');
+        if(action!=='enable_phone'){
+          await renderClassParentEditorReload(classId,root,host);
+        }else{button.disabled=false;button.textContent=oldText;}
+      }catch(err){alert('Ошибка: '+msg(err));button.disabled=false;button.textContent=oldText;}
+    });
+    host.querySelector('#save-class-parents').onclick=async()=>{
+      const btn=host.querySelector('#save-class-parents'),output=host.querySelector('#save-class-parents-result');
+      const partial=lines.find(r=>r.phone&&afsLocalDigits(r.phone).length!==10);
+      if(partial){output.textContent='Проверьте номер родителя «'+(partial.parent_name||partial.student_name)+'»: должно быть 10 цифр после +7. Или очистите поле.';output.className='toast bad';return;}
+      const noName=lines.find(r=>afsLocalDigits(r.phone).length===10&&!r.parent_name.trim());
+      if(noName){output.textContent='Для заполненного номера укажите ФИО родителя.';output.className='toast bad';return;}
+      const payload=lines.filter(r=>r.parent_name.trim()&&afsLocalDigits(r.phone).length===10).map(r=>({student_id:r.student_id,parent_id:r.parent_id,parent_name:r.parent_name.trim(),phone:normalizeKzPhone(r.phone),whatsapp_opt_in:r.opt_in}));
+      btn.disabled=true;output.textContent='Сохраняем весь класс…';output.className='note';
+      let result={saved:0};
+      if(payload.length){const save=await supabase.rpc('afs_save_class_parents',{p_class_id:classId,p_rows:payload});
+        if(save.error){output.textContent='Ошибка: '+msg(save.error);output.className='toast bad';btn.disabled=false;return;}result=save.data||result;}
+      for(const [student_id,full_name] of pendingStudentNames){
+        const {error}=await supabase.rpc('afs_manage_students',{p_action:'update_student',p_payload:{student_id,full_name,class_id:classId}});
+        if(error){output.textContent='Телефоны сохранены, но ФИО ученика не изменено: '+msg(error);output.className='toast bad';btn.disabled=false;return;}
+      }
+      const renamed=new Map(lines.filter(r=>r.parent_id&&r.parent_name.trim()!==r.initial_parent_name.trim()).map(r=>[r.parent_id,r.parent_name.trim()]));
+      for(const [parentId,full_name] of renamed){
+        if(full_name.length<3){output.textContent='ФИО родителя слишком короткое';output.className='toast bad';btn.disabled=false;return;}
+        const {data,error}=await supabase.from('parents').update({full_name}).eq('id',parentId).select('id');
+        if(error||!data?.length){output.textContent='Телефоны сохранены, но ФИО родителя не изменено: '+(error?msg(error):'нет прав на изменение карточки');output.className='toast bad';btn.disabled=false;return;}
+      }
+      await reloadStudents();
+      output.textContent='Сохранено строк: '+result.saved+'. Пустые номера пропущены.';output.className='toast ok';
+      // Обновить только таблицу, без сброса отзывов и вкладки.
+      await renderClassParentEditorReload(classId,root,host);
+      const updated=root.querySelector('#save-class-parents-result');
+      if(updated){updated.textContent=`Сохранено ${result.saved||0} заполненных строк. Остальные номера можно добавить позднее.`;updated.className='toast ok';}
+      if(state.tab==='panel')root.dispatchEvent(new Event('afs-parent-grid-saved',{bubbles:true}));
+    };
+  };
+  draw();
+}
+
+const afsPencilSvg='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>';
+function afsLocalDigits(value){
+  const v=String(value||'').trim(),d=v.replace(/\D/g,'');
+  // +7 is ALWAYS a prefix here, including when the number is unfinished.
+  if(v.startsWith('+7'))return d.slice(1,11);
+  if(d.length===11&&/^[78]/.test(d))return d.slice(1);
+  return d.slice(0,10);
+}
+function afsFormatLocalDigits(d){
+  d=String(d||'').replace(/\D/g,'').slice(0,10);
+  return d.slice(0,3)+(d.length>3?' '+d.slice(3,6):'')+(d.length>6?' '+d.slice(6,8):'')+(d.length>8?' '+d.slice(8,10):'');
+}
+function afsDisplayLocalPhone(value){return afsFormatLocalDigits(afsLocalDigits(value));}
+function afsNormalizeTyping(value){
+  const d=afsLocalDigits(value);
+  return d?'+7'+d:'';
+}
+function afsSetPhoneIcon(root,row,value){const el=root.querySelector('[data-phone-check="'+row+'"]');if(!el)return;const n=afsLocalDigits(value).length,ok=n===10;const color=n===0?'#9CA3AF':ok?'#2E7D4F':'#B3322B';const inner=n===0?'':ok?'<path d="m8 12 2.5 2.5 5-5"/>':'<path d="m9 9 6 6m0-6-6 6"/>';el.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/>'+inner+'</svg>';}
+
+function normalizeKzPhone(value){
+  const d=String(value||'').replace(/\D/g,'');
+  if(/^8\d{10}$/.test(d))return '+7'+d.slice(1);
+  if(/^7\d{10}$/.test(d))return '+'+d;
+  if(/^\d{10}$/.test(d))return '+7'+d;
+  return '';
+}
+async function renderClassParentEditorReload(classId,root,oldHost){
+  oldHost.remove();
+  if(root.isConnected&&(state.tab==='class'||state.tab==='manage'||state.tab==='panel'))await renderClassParentEditor(classId,root);
+}
+// AFS #37: compact teacher Panel. No changes to Send or administrative Manage.
+function renderPanel(){
+  const root=$('#v-panel');
+  const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
+  const allowed=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  // Keep panel's selection independent from the Send tab's class selection.
+  if(!allowed.length){root.innerHTML='<div class="panel"><h2>Мои классы</h2><p class="note">Классное руководство пока не назначено. Если это ошибка, обратитесь к завучу.</p></div>';return;}
+  if(!allowed.some(c=>c.id===state.panelClass))state.panelClass=allowed[0].id;
+  const classId=state.panelClass;
+  const pupils=state.students.filter(s=>s.class_id===classId).sort((a,b)=>a.full_name.localeCompare(b.full_name,'ru'));
+  const byStudent=new Map(pupils.map(p=>[p.id,p]));
+  const feedback=state.staffFeed.filter(f=>Number(f.class_id)===classId && (f.status===undefined||f.status==='published'))
+    .sort((a,b)=>new Date(b.published_at||b.created_at)-new Date(a.published_at||a.created_at));
+  const weekAgo=Date.now()-7*24*60*60*1000;
+  const recent=feedback.filter(f=>new Date(f.published_at||f.created_at).getTime()>=weekAgo).length;
+  const confirmed=feedback.filter(f=>Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total)).length;
+  root.innerHTML=`<div class="panel afs-panel-head"><h2>Мои классы</h2>
+      <div class="afs-panel-tools"><label class="afs-panel-select">Класс
+        <select id="afs-panel-class">${allowed.map(c=>`<option value="${c.id}" ${c.id===classId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      </label><button type="button" class="btn ghost" id="afs-export-class">Скачать список класса</button></div></div>
+    <details class="panel afs-parents-collapse" id="afs-parents-collapse"><summary class="afs-parents-summary">
+      <span class="afs-parents-title">Родители и телефоны класса <span class="afs-chevron" aria-hidden="true">▾</span></span>
+      <span class="afs-parents-completion" id="afs-parents-completion">Загружаем…</span>
+      <span class="afs-parent-bar"><i id="afs-parents-bar" style="width:0%"></i></span>
+    </summary><div id="afs-panel-parents-body"><p class="note">Загружаем…</p></div></details>
+    <div class="tiles afs-panel-metrics">
+      <div class="tile"><div class="k">Учеников</div><div class="v">${pupils.length}</div><div class="h">В выбранном классе</div></div>
+      <div class="tile"><div class="k">Отзывов за 7 дней</div><div class="v">${recent}</div><div class="h">Опубликовано за последние 7 дней</div></div>
+      <div class="tile"><div class="k">Ознакомлено</div><div class="v">${confirmed}</div><div class="h">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
+      <div class="tile"><div class="k">WhatsApp · заполненность</div><div class="v" id="afs-phone-percent">—</div><div class="h" id="afs-phone-count">Телефоны родителей</div></div>
+    </div>
+    <div class="panel"><div class="afs-history-head"><h2>История отзывов</h2>
+      <div class="afs-history-filters" role="group" aria-label="Фильтр отзывов">
+        <button class="chipbtn" data-afs-filter="all" aria-pressed="true">Все</button>
+        <button class="chipbtn" data-afs-filter="read" aria-pressed="false">Ознакомлены</button>
+        <button class="chipbtn" data-afs-filter="waiting" aria-pressed="false">Ожидают</button>
+      </div></div>
+      <p class="note">Новые отзывы выше старых. Откройте отзыв, чтобы увидеть содержание и подтверждения родителей.</p>
+      <div id="afs-history-list"></div>
+    </div>`;
+  const selector=root.querySelector('#afs-panel-class');
+  selector.onchange=()=>{state.panelClass=Number(selector.value);renderPanel()};
+  root.querySelector('#afs-export-class').onclick=async()=>{
+    const button=root.querySelector('#afs-export-class');button.disabled=true;
+    try{
+      const data=[['№','ФИО ученика','Класс'],...pupils.map((s,i)=>[i+1,s.full_name,allowed.find(c=>c.id===classId)?.name||''])];
+      const lib=await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      const wb=lib.utils.book_new();const ws=lib.utils.aoa_to_sheet(data);
+      ws['!cols']=[{wch:6},{wch:48},{wch:12}];lib.utils.book_append_sheet(wb,ws,'Ученики');
+      lib.writeFile(wb,'AFS_ученики_'+(allowed.find(c=>c.id===classId)?.name||classId)+'.xlsx');
+    }catch(err){
+      // A CSV fallback still opens in Excel when CDN is inaccessible.
+      const cols=[['№','ФИО ученика','Класс'],...pupils.map((s,i)=>[i+1,s.full_name,allowed.find(c=>c.id===classId)?.name||''])];
+      const csv='\ufeff'+cols.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('\r\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download='AFS_ученики_'+(allowed.find(c=>c.id===classId)?.name||classId)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+    }finally{if(button.isConnected)button.disabled=false;}
+  };
+  const list=root.querySelector('#afs-history-list');
+  function showHistory(filter){
+    const selected=feedback.filter(f=>{
+      const read=Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total);
+      return filter==='all'||(filter==='read'&&read)||(filter==='waiting'&&!read);
+    });
+    if(!selected.length){list.innerHTML='<div class="empty">Отзывов в этой категории пока нет.</div>';return;}
+    list.innerHTML=selected.map(f=>{
+      const student=byStudent.get(Number(f.student_id));
+      const subj=state.subjects.find(x=>Number(x.id)===Number(f.subject_id))?.name||'Предмет';
+      const date=f.published_at||f.created_at;
+      return `<details class="afs-review"><summary><b>${esc(student?.full_name||f.student_name||'Ученик')}</b><span>${esc(subj)} · ${date?esc(new Date(date).toLocaleString('ru-RU')):''}</span><span class="pill ${Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total)?'ok':'warn'}">${esc(receiptLabel(f))}</span></summary>
+         <div class="layer bun top"><b>Похвала</b><div>${esc(f.praise)}</div></div>
+         <div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div>
+         <div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div>
+         <p class="note">Автор: ${esc(f.author_name||'Преподаватель')}</p>${receiptBreakdown(f)}<div data-files-for="${f.id}"></div></details>`;
+    }).join('');
+    showFeedbackFiles(selected.map(f=>f.id),list);
+  }
+  root.querySelectorAll('[data-afs-filter]').forEach(btn=>btn.onclick=()=>{
+    root.querySelectorAll('[data-afs-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+    showHistory(btn.dataset.afsFilter);
+  });
+  showHistory('all');
+  const collapse=root.querySelector('#afs-parents-collapse');
+  const parentBody=root.querySelector('#afs-panel-parents-body');
+  let loaded=false;
+  collapse.addEventListener('toggle',()=>{
+    if(!collapse.open||loaded)return;
+    loaded=true;parentBody.replaceChildren();renderClassParentEditor(classId,parentBody);
+  });
+  // Lightweight summary query: does not open the full edit table until requested.
+  const refreshPhoneSummary=async()=>{
+    const {data,error}=await supabase.rpc('afs_class_parent_grid',{p_class_id:classId});
+    if(!root.isConnected||state.panelClass!==classId)return;
+    const node=root.querySelector('#afs-parents-completion');
+    if(error){node.textContent='Заполненность недоступна';root.querySelector('#afs-phone-count').textContent='Нет доступа к данным';return;}
+    const people=data?.students||[];
+    const withPhone=people.filter(st=>(st.parents||[]).some(p=>p.parent_name&&normalizeKzPhone(p.phone))).length;
+    const pct=people.length?Math.round(withPhone*100/people.length):0;
+    node.textContent=pct+'% · '+withPhone+' из '+people.length;
+    root.querySelector('#afs-parents-bar').style.width=pct+'%';
+    root.querySelector('#afs-phone-percent').textContent=pct+'%';
+    root.querySelector('#afs-phone-count').textContent=withPhone+' из '+people.length+' учеников с телефоном родителя';
+  };
+  parentBody.addEventListener('afs-parent-grid-saved',refreshPhoneSummary);
+  refreshPhoneSummary();
+}
+async function renderClassCompletion(){
+  const host=$('#afs-completion');if(!host)return;
+  const {data,error}=await supabase.rpc('afs_class_parent_completion');
+  if(!host.isConnected)return;
+  if(error){host.innerHTML=`<div class="toast bad">Заполненность классов: ${esc(msg(error))}. Нужен SQL №29.</div>`;return;}
+  if(!data?.length)return;
+  host.innerHTML=`<div class="panel"><h2>Заполненность телефонов по классам</h2>
+  <div class="tw"><table><thead><tr><th>Класс</th><th>С номерами</th><th>Заполненность</th></tr></thead><tbody>${data.map(x=>`<tr><td><b>${esc(x.class_name)}</b></td><td>${x.students_with_phone} / ${x.students_total}</td><td><div class="bar"><i style="width:${x.completion_percent}%;background:${x.completion_percent===100?'#2E7D4F':'#C76A12'}"></i></div>${x.completion_percent}%</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function renderRoster(){
+  const admin=state.roles.some(r=>r==='superadmin'||r==='deputy');
+  const opts=state.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const rows=state.students.map(st=>`<tr><td>${esc(state.classes.find(c=>c.id===st.class_id)?.name||'')}</td><td>${esc(st.full_name)}</td>${admin?`<td><button type="button" class="btn ghost" data-edit-student="${st.id}">Редактировать</button></td>`:''}</tr>`).join('');
+  $('#v-roster').innerHTML=`<div class="panel"><h2>Ученики (${state.students.length})</h2><div class="tw"><table><thead><tr><th>Класс</th><th>ФИО ученика</th>${admin?'<th>Действие</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`+
+  (admin?`<div class="forms" style="margin-top:16px"><div class="panel"><h2 id="student-editor-title">Добавить ученика</h2><form id="student-editor" class="compose"><input type="hidden" id="student-edit-id"><label>ФИО ученика<input id="student-name" required minlength="3" maxlength="160" placeholder="ТЕСТОВЫЙ Ученик"></label><label>Класс<select id="student-class" required>${opts}</select></label><div class="actions"><button class="btn primary" type="submit">Сохранить</button><button class="btn ghost" type="button" id="student-clear">Сбросить</button></div><div id="student-result" class="note" role="status"></div></form></div><div class="panel"><h2>Массовая загрузка учеников</h2><p class="note">Выберите класс и файл Excel (.xlsx) или CSV. Поддерживается таблица с заголовком «ФИО» или первый столбец с ФИО. Один файл — один класс; максимум 200 строк за загрузку.</p><form id="students-import" class="compose"><label>Класс<select id="import-class" required>${opts}</select></label><label>Файл Excel / CSV<input id="students-file" type="file" accept=".xlsx,.xls,.csv" required></label><button class="btn ghost" type="button" id="students-preview">Предпросмотр файла</button><div id="import-preview" class="note" role="status"></div><button class="btn primary" type="submit" id="import-submit" disabled>Импортировать учеников</button><div id="import-result" class="note" role="status"></div></form></div></div>`:'');
+  if(!admin)return;
+  const editor=$('#student-editor');
+  $('#student-clear').onclick=()=>{editor.reset();$('#student-edit-id').value='';$('#student-editor-title').textContent='Добавить ученика';$('#student-result').textContent=''};
+  document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>{
+    const st=state.students.find(x=>x.id===Number(b.dataset.editStudent));if(!st)return;
+    $('#student-edit-id').value=st.id;$('#student-name').value=st.full_name;$('#student-class').value=st.class_id;
+    $('#student-editor-title').textContent='Редактировать ученика';$('#student-result').textContent='';
+    editor.scrollIntoView({behavior:'smooth',block:'center'});
+  });
+  async function execute(action,payload){const {data,error}=await supabase.rpc('afs_manage_students',{p_action:action,p_payload:payload});if(error)throw error;return data;}
+  editor.onsubmit=async e=>{e.preventDefault();const out=$('#student-result'),button=editor.querySelector('[type="submit"]');button.disabled=true;out.textContent='Сохраняем…';try{
+    const id=$('#student-edit-id').value;const data=await execute(id?'update_student':'add_student',{student_id:id?Number(id):null,full_name:$('#student-name').value.trim(),class_id:Number($('#student-class').value)});
+    await reloadStudents();out.className='toast ok';out.textContent=data.message;renderRoster();$('#student-result').textContent=data.message;
+  }catch(err){out.className='toast bad';out.textContent=msg(err)}finally{button.disabled=false}};
+  let parsed=[];let currentFile=null;
+  $('#students-file').onchange=()=>{parsed=[];currentFile=null;$('#import-submit').disabled=true;$('#import-preview').textContent='Нажмите «Предпросмотр файла»'};
+  $('#import-class').onchange=()=>{parsed=[];$('#import-submit').disabled=true;$('#import-preview').textContent='Класс изменён, повторите предпросмотр'};
+  $('#students-preview').onclick=async()=>{
+    const file=$('#students-file').files?.[0],out=$('#import-preview');parsed=[];$('#import-submit').disabled=true;
+    if(!file){out.textContent='Сначала выберите файл';return}
+    if(file.size>3*1024*1024){out.textContent='Файл превышает 3 МБ';return}
+    out.textContent='Читаем файл…';
+    try{
+      const mod=await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      const workbook=mod.read(await file.arrayBuffer(),{type:'array'});
+      const sheet=workbook.Sheets[workbook.SheetNames[0]];
+      const grid=mod.utils.sheet_to_json(sheet,{header:1,defval:'',blankrows:false});
+      if(!grid.length)throw Error('Файл пустой');
+      const header=grid[0].map(v=>String(v).toLowerCase().trim());
+      let col=header.findIndex(v=>v==='фио'||v==='ф.и.о.'||v==='фамилия имя отчество'||v==='ученик'||v==='учащийся');
+      const hasHeader=col>=0;if(col<0)col=0;
+      parsed=grid.slice(hasHeader?1:0).map(row=>String(row[col]??'').replace(/\s+/g,' ').trim()).filter(Boolean);
+      if(parsed.length<1||parsed.length>200)throw Error('Нужно от 1 до 200 учеников в одном файле');
+      if(parsed.some(name=>name.length<3||name.length>160))throw Error('Проверьте ФИО: допустимо 3–160 символов');
+      currentFile=file;
+      const duplicates=parsed.length-new Set(parsed.map(n=>n.toLowerCase())).size;
+      out.innerHTML=`<b>Готово к загрузке: ${parsed.length} записей.</b> ${duplicates?'Повторы внутри файла: '+duplicates+'.':''}<div class="preview" style="margin-top:8px;max-height:150px;overflow:auto">${parsed.slice(0,12).map(esc).join('<br>')}${parsed.length>12?'<br>…':''}</div>`;
+      $('#import-submit').disabled=false;
+    }catch(err){out.textContent='Ошибка чтения: '+msg(err)}
+  };
+  $('#students-import').onsubmit=async e=>{
+    e.preventDefault();const out=$('#import-result'),btn=$('#import-submit');if(!parsed.length||!currentFile){out.textContent='Сначала выполните предпросмотр';return}
+    btn.disabled=true;out.className='note';out.textContent='Импортируем…';
+    try{const class_id=Number($('#import-class').value);const data=await execute('import_students',{students:parsed.map(full_name=>({full_name,class_id}))});
+      await reloadStudents();renderRoster();$('#import-result').className='toast ok';$('#import-result').textContent=`Добавлено: ${data.created}. Пропущено повторов: ${data.skipped}.`;
+    }catch(err){out.className='toast bad';out.textContent=msg(err);btn.disabled=false}
+  };
+}
+async function reloadStudents(){
+  const {data,error}=await supabase.from('students').select('id,class_id,full_name,status').eq('status','active').order('full_name').limit(10000);
+  if(error)throw error;state.students=data||[];
+}
+
+
+// AFS #36: staff access + edit. Temporary credentials stay only in this tab's memory.
+async function afsStaffIssue(ids){
+  const all=[];
+  for(let i=0;i<ids.length;i+=8){
+    const {data,error}=await supabase.functions.invoke('staff-access',{body:{user_ids:ids.slice(i,i+8)}});
+    if(error||data?.error){
+      let detail=data?.error||error?.message||'Ошибка функции';
+      if(error?.context&&typeof error.context.json==='function'){
+        try{const body=await error.context.json();detail=body.error||body.message||detail;}catch{}
+      }
+      throw Error(detail);
+    }
+    for(const result of data.results||[]){
+      all.push(result);
+      if(result.password)staffTemporaryCredentials.set(result.user_id,result.password);
+    }
+  }
+  return all;
+}
+function afsDownloadStaffCredentials(items){
+  const csv=[['ФИО','Логин','Новый временный пароль'],...items.filter(x=>x.password).map(x=>[x.full_name,x.login,x.password])]
+    .map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
+  a.download='AFS_временные_пароли_учителей.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+function afsWireStaffManager(d){
+  const root=$('#v-manage');
+  const byId=new Map(d.staff.map(x=>[String(x.id),x]));
+  const labelAssignment=a=>{
+    const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';
+    const sub=d.subjects.find(s=>s.id===a.subject_id)?.name||'';
+    return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+  };
+  root.querySelectorAll('[data-staff-copy-login]').forEach(b=>b.onclick=async()=>{
+    const item=byId.get(b.dataset.staffCopyLogin);if(item)await navigator.clipboard.writeText(item.email||'');
+    b.textContent='Скопировано';
+  });
+  root.querySelectorAll('[data-staff-copy-password]').forEach(b=>b.onclick=async()=>{
+    const value=staffTemporaryCredentials.get(b.dataset.staffCopyPassword);
+    if(value){await navigator.clipboard.writeText(value);b.textContent='Скопировано';}
+  });
+  const status=root.querySelector('#staff-access-result');
+  root.querySelectorAll('[data-staff-issue]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.staffIssue,item=byId.get(id);
+    if(!item||!confirm('Выдать НОВЫЙ временный пароль для '+item.full_name+'? Старый пароль перестанет работать.'))return;
+    b.disabled=true;status.textContent='Устанавливаем новый пароль…';
+    try{
+      const result=await afsStaffIssue([id]);
+      if(result[0]?.error)throw Error(result[0].error);
+      const password=result[0]?.password;
+      status.className='toast ok';status.textContent='Новый пароль выдан для '+item.full_name+'. Скопируйте его из таблицы.';
+      const cell=b.closest('td');cell.innerHTML='<code>'+esc(password)+'</code><button type="button" class="afs-copy" data-copy-new="">Копировать</button><button type="button" class="afs-issue-button">Выдать новый</button>';
+      cell.querySelector('[data-copy-new]').onclick=async()=>{await navigator.clipboard.writeText(password);cell.querySelector('[data-copy-new]').textContent='Скопировано';};
+      cell.querySelector('.afs-issue-button').onclick=()=>{renderManage();};
+    }catch(e){status.className='toast bad';status.textContent='Ошибка: '+msg(e);b.disabled=false;}
+  });
+  async function massIssue(mode){
+    const eligible=d.staff.filter(x=>x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r)));
+    const homeroom=new Set(d.assignments.filter(a=>a.assignment_type==='homeroom').map(a=>a.user_id));
+    const chosen=mode==='homeroom'?eligible.filter(x=>homeroom.has(x.id)):eligible;
+    if(!chosen.length){status.textContent='Подходящие сотрудники не найдены';return;}
+    if(!confirm('Вы действительно хотите установить НОВЫЕ временные пароли для '+chosen.length+' сотрудников? Их прежние пароли перестанут работать. После этого CSV с новыми паролями будет загружен на ваш компьютер.'))return;
+    const buttons=[root.querySelector('#staff-issue-homeroom'),root.querySelector('#staff-issue-all')];buttons.forEach(b=>b.disabled=true);
+    let items=[];status.className='note';status.textContent='Обновляем пароли '+chosen.length+' сотрудников…';
+    try{
+      // Deliberate per-batch calls; successful batches are preserved if a later batch fails.
+      for(let i=0;i<chosen.length;i+=8){
+        const part=await afsStaffIssue(chosen.slice(i,i+8).map(x=>x.id));items.push(...part);
+        status.textContent='Обработано '+Math.min(i+8,chosen.length)+' из '+chosen.length;
+      }
+      afsDownloadStaffCredentials(items);
+      const success=items.filter(x=>x.password).length;
+      const failed=items.filter(x=>x.error);
+      status.className=failed.length?'toast bad':'toast ok';
+      status.textContent='Выдано '+success+' новых паролей, ошибок: '+failed.length+'. CSV скачан. Храните его в защищённом месте.';
+      if(failed.length)status.textContent+=' Ошибки: '+failed.map(x=>byId.get(x.user_id)?.full_name+': '+x.error).join('; ');
+      // Show new passwords in their current rows; no new network calls.
+      for(const item of items.filter(x=>x.password)){
+        const b=root.querySelector('[data-staff-issue="'+item.user_id+'"]');
+        if(!b)continue;
+        const cell=b.closest('td');
+        cell.querySelector('.note')?.remove();
+        cell.insertAdjacentHTML('afterbegin','<code>'+esc(item.password)+'</code><button type="button" class="afs-copy" data-copy-mass="'+esc(item.user_id)+'">Копировать</button>');
+      }
+      root.querySelectorAll('[data-copy-mass]').forEach(b=>b.onclick=async()=>{await navigator.clipboard.writeText(staffTemporaryCredentials.get(b.dataset.copyMass)||'');b.textContent='Скопировано';});
+    }catch(e){
+      if(items.length)afsDownloadStaffCredentials(items);
+      status.className='toast bad';status.textContent='Прервано: '+msg(e)+'. Успешно обновлённые пароли выгружены в CSV.';
+    }finally{buttons.forEach(b=>b.disabled=false);}
+  }
+  if(root.querySelector('#staff-issue-homeroom'))root.querySelector('#staff-issue-homeroom').onclick=()=>massIssue('homeroom');
+  if(root.querySelector('#staff-issue-all'))root.querySelector('#staff-issue-all').onclick=()=>massIssue('all');
+  const dialog=root.querySelector('#afs-staff-dialog'),body=root.querySelector('#afs-staff-dialog-body');
+  root.querySelectorAll('[data-staff-edit]').forEach(btn=>btn.onclick=()=>{
+    const staff=byId.get(btn.dataset.staffEdit);if(!staff)return;
+    const assignments=d.assignments.filter(a=>a.user_id===staff.id);
+    body.innerHTML=`<div class="compose"><label>ФИО сотрудника<input id="afs-edit-name" maxlength="160" value="${esc(staff.full_name)}"></label>
+      <label>Логин (изменение отключено)<input value="${esc(staff.email||'')}" readonly></label>
+      <div class="note">Роли: ${esc((staff.roles||[]).join(', '))}. Роли безопасности здесь не изменяются.</div>
+      <div class="afs-assignments"><b>Назначения</b>${assignments.length?assignments.map(a=>`<div class="afs-assignment"><span>${esc(labelAssignment(a))}</span><button type="button" class="btn ghost" data-remove-assignment="${a.id}">Снять</button></div>`).join(''):'<p class="note">Назначений нет</p>'}</div>
+      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment"><b>Назначить несколько классов и предметов</b><p class="note">Создайте нужное число строк. Сохранение выполняется один раз, не закрывая карточку после каждого назначения.</p>
+      <div id="afs-bulk-rows" style="display:grid;gap:10px"></div>
+      <div class="actions"><button type="button" class="btn ghost" id="afs-bulk-new-row">+ Ещё класс / предмет</button><button type="button" class="btn primary" id="afs-bulk-save">Сохранить все назначения</button></div></div>`:''}
+      <button type="button" class="btn primary" id="afs-edit-save-name">Сохранить ФИО</button><div class="note" id="afs-edit-status" role="status"></div></div>`;
+    const out=body.querySelector('#afs-edit-status');
+    async function run(call){out.className='note';out.textContent='Сохраняем…';try{await call();dialog.close();await renderManage();}catch(e){out.className='toast bad';out.textContent='Ошибка: '+msg(e);}}
+    body.querySelector('#afs-edit-save-name').onclick=()=>run(async()=>{
+      const full_name=body.querySelector('#afs-edit-name').value.trim();
+      if(full_name.length<5)throw Error('Укажите ФИО полностью');
+      const {error}=await supabase.rpc('afs_staff_edit',{p_action:'rename',p_payload:{user_id:staff.id,full_name}});if(error)throw error;
+    });
+    body.querySelectorAll('[data-remove-assignment]').forEach(b=>b.onclick=()=>{
+      const assignment=assignments.find(a=>String(a.id)===b.dataset.removeAssignment);
+      if(!assignment||!confirm('Снять назначение: '+labelAssignment(assignment)+'?'))return;
+      run(async()=>{const {error}=await supabase.rpc('afs_staff_edit',{p_action:'remove_assignment',p_payload:{assignment_id:assignment.id}});if(error)throw error;});
+    });
+    const rowsBox=body.querySelector('#afs-bulk-rows');
+    if(rowsBox){
+      const addRow=()=>{
+        const row=document.createElement('div');
+        row.className='afs-bulk-row';
+        row.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:9px';
+        row.innerHTML=`<label>Класс<select class="afs-bulk-class">${d.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+          <label>Тип<select class="afs-bulk-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label>
+          <button type="button" class="btn ghost afs-bulk-remove" aria-label="Убрать строку">×</button>
+          <label class="afs-bulk-subject-wrap" style="grid-column:1/-1">Предмет<select class="afs-bulk-subject">${d.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>`;
+        const type=row.querySelector('.afs-bulk-type');
+        const update=()=>row.querySelector('.afs-bulk-subject-wrap').hidden=type.value==='homeroom';
+        type.onchange=update;update();
+        row.querySelector('.afs-bulk-remove').onclick=()=>row.remove();
+        rowsBox.append(row);
+      };
+      body.querySelector('#afs-bulk-new-row').onclick=addRow;
+      addRow();
+      body.querySelector('#afs-bulk-save').onclick=async()=>{
+        const rows=[...rowsBox.querySelectorAll('.afs-bulk-row')];
+        if(!rows.length){out.className='toast bad';out.textContent='Добавьте хотя бы одно назначение';return;}
+        const payloads=rows.map(row=>{
+          const type=row.querySelector('.afs-bulk-type').value;
+          return {teacher_id:staff.id,class_id:Number(row.querySelector('.afs-bulk-class').value),
+            assignment_type:type,subject_id:type==='homeroom'?null:Number(row.querySelector('.afs-bulk-subject').value)};
+        });
+        const keys=payloads.map(p=>[p.class_id,p.assignment_type,p.subject_id??''].join(':'));
+        if(new Set(keys).size!==keys.length){out.className='toast bad';out.textContent='Есть повторяющиеся строки. Уберите дубликаты.';return;}
+        const button=body.querySelector('#afs-bulk-save');button.disabled=true;
+        let done=0;
+        try{
+          for(const payload of payloads){
+            const {error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});
+            if(error)throw error;
+            done++;
+            out.className='note';out.textContent='Сохранено '+done+' из '+payloads.length;
+          }
+          out.className='toast ok';out.textContent='Все '+done+' назначения обработаны.';
+          dialog.close();await renderManage();
+        }catch(e){
+          out.className='toast bad';out.textContent='Сохранено '+done+' из '+payloads.length+'. Ошибка: '+msg(e)+'. Закройте и откройте карточку, чтобы увидеть сохранённые строки.';
+        }finally{button.disabled=false;}
+      };
+    }
+    dialog.showModal();
+  });
+}
+
+// School management: server-authorized RPCs; no service keys in this file.
+async function refreshManageData(){
+  const [{data:staff,error:e1},{data:classes,error:e2},{data:subjects,error:e3},{data:assignments,error:e4}]=await Promise.all([
+    supabase.rpc('afs_staff_directory'),
+    supabase.from('classes').select('id,name,grade').order('name'),
+    supabase.from('subjects').select('id,name').eq('is_active',true).order('name'),
+    supabase.from('teacher_assignments').select('id,user_id,class_id,subject_id,assignment_type')
+  ]);
+  const error=e1||e2||e3||e4;
+  if(error)throw error;
+  return {staff:staff||[],classes:classes||[],subjects:subjects||[],assignments:assignments||[]};
+}
+async function renderManage(){
+  if(!state.roles.some(r=>r==='superadmin'||r==='deputy')){
+    $('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;
+  }
+  const root=$('#v-manage');
+  root.innerHTML='<div class="panel"><h2>Управление школой</h2><p class="note">Загружаем преподавателей, классы и предметы…</p></div>';
+  let d;
+  try{d=await refreshManageData()}catch(e){root.innerHTML=`<div class="toast bad">Ошибка загрузки управления: ${esc(msg(e))}. Сначала выполните SQL №21.</div>`;return;}
+  if(state.tab!=='manage')return;
+  const t=d.staff.filter(x=>x.roles?.includes('teacher'));
+  const option=(arr,label)=>arr.map(x=>`<option value="${esc(x.id)}">${esc(label(x))}</option>`).join('');
+  root.innerHTML=`<div class="tiles">
+    <div class="tile"><div class="k">Сотрудники</div><div class="v">${d.staff.length}</div></div>
+    <div class="tile"><div class="k">Классы</div><div class="v">${d.classes.length}</div></div>
+    <div class="tile"><div class="k">Предметы</div><div class="v">${d.subjects.length}</div></div>
+    <div class="tile"><div class="k">Назначения</div><div class="v">${d.assignments.length}</div></div>
+  </div><div class="forms">
+    <div class="panel"><h2>Добавить преподавателя</h2><form id="create-teacher" class="compose">
+      <label>ФИО<input id="teacher-fullname" required minlength="3" maxlength="150" placeholder="ТЕСТОВЫЙ Преподаватель"></label>
+      <label>Email<input id="teacher-email" type="email" required maxlength="254" placeholder="Адрес для тестирования"></label>
+      <button class="btn primary" type="submit">Добавить учителя</button><div id="staff-result" class="note" role="status"></div>
+      <p class="note">Учётная запись создаётся без пароля. Рассылку приглашений подключим отдельно.</p>
+    </form></div>
+    <div class="panel"><h2>Назначить преподавателя</h2><form id="assign-form" class="compose">
+      <label>Преподаватель<select id="a-teacher" required>${option(t,x=>x.full_name)}</select></label>
+      <div class="grid2"><label>Класс<select id="a-class" required>${option(d.classes,x=>x.name)}</select></label>
+      <label>Тип назначения<select id="a-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label></div>
+      <label id="a-subject-wrap">Предмет<select id="a-subject" required>${option(d.subjects,x=>x.name)}</select></label>
+      <button class="btn primary" type="submit" ${!t.length||!d.classes.length||!d.subjects.length?'disabled':''}>Сохранить назначение</button><div id="assign-result" class="note" role="status"></div>
+    </form></div>
+    <div class="panel"><h2>Новый класс</h2><form id="class-form" class="compose">
+      <label>Обозначение класса<input id="new-class-name" required maxlength="20" placeholder="5А"></label>
+      <label>Параллель<input id="new-class-grade" required type="number" min="0" max="11" value="5"></label>
+      <button class="btn primary" type="submit">Создать класс</button><div id="class-result" class="note" role="status"></div>
+    </form></div>
+    <div class="panel"><h2>Новый предмет</h2><form id="subject-form" class="compose">
+      <label>Название<input id="new-subject-name" required maxlength="100" placeholder="Математика"></label>
+      <button class="btn primary" type="submit">Добавить предмет</button><div id="subject-result" class="note" role="status"></div>
+    </form></div>
+  </div><div class="panel" style="margin-bottom:16px"><h2>Родители · управление классом</h2>
+    <p class="note">Выберите класс. Все ученики и родители откроются одной таблицей: ФИО, телефон/логин, доступ и временный пароль. Сохранение данных — одной кнопкой. Для второго родителя есть «+ Родитель».</p>
+    <label>Класс<select id="manage-parent-class">${option(d.classes,x=>x.name)}</select></label>
+    <div id="manage-parent-grid"></div>
+    <div id="manage-parents-result" class="note" role="status"></div>
+  </div><div class="panel"><div class="afs-staff-header"><div><h2>Сотрудники и назначения</h2><p class="note">Логины уже созданы. Существующие пароли не отображаются. Новый временный пароль заменяет предыдущий и показывается только после выдачи.</p></div><div class="actions">${state.roles.includes('superadmin')?'<button type="button" id="staff-issue-homeroom" class="btn ghost">Выдать пароли классным руководителям</button><button type="button" id="staff-issue-all" class="btn ghost">Выдать всем учителям</button>':''}</div></div>
+    <div id="staff-access-result" class="note" role="status"></div>
+    <div class="tw"><table><thead><tr><th>ФИО</th><th>Логин (email)</th><th>Роли</th><th>Назначения</th><th>Временный пароль</th><th></th></tr></thead><tbody>
+    ${d.staff.map(x=>`<tr><td><b>${esc(x.full_name)}</b></td><td><span class="afs-login">${esc(x.email||'—')}</span><button type="button" class="afs-copy" data-staff-copy-login="${esc(x.id)}" title="Скопировать логин">Копировать</button></td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
+      const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';const sub=d.subjects.find(z=>z.id===a.subject_id)?.name||'';
+      return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+    }).join('; ')||'—')}</td>
+    <td class="afs-credential-cell">${staffTemporaryCredentials.has(x.id)?`<code>${esc(staffTemporaryCredentials.get(x.id))}</code><button type="button" class="afs-copy" data-staff-copy-password="${esc(x.id)}">Копировать</button>`:'<span class="note">Не выдавался в этой сессии</span>'}
+    ${state.roles.includes('superadmin')&&x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r))?`<button type="button" class="afs-issue-button" data-staff-issue="${esc(x.id)}">Выдать новый</button>`:''}</td>
+    <td>${state.roles.includes('superadmin')?`<button type="button" class="afs-staff-pencil" data-staff-edit="${esc(x.id)}" title="Редактировать сотрудника" aria-label="Редактировать сотрудника">${afsPencilSvg}</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
+    ${state.roles.includes('superadmin')?'<div class="panel" style="margin:14px 0"><h2>Права доступа Future School</h2><p class="note">Настройте роли, разрешения и индивидуальные права сотрудников в едином редакторе.</p><a class="btn ghost" href="access-admin.html">Открыть управление ролями</a></div>':''}
+    <dialog id="afs-staff-dialog" class="afs-staff-dialog"><form method="dialog"><button class="afs-dialog-close" aria-label="Закрыть">×</button></form><h2>Редактировать сотрудника</h2><div id="afs-staff-dialog-body"></div></dialog>`;
+  const classPicker=$('#manage-parent-class');
+  const showParentsForClass=async()=>{
+    const root=$('#manage-parent-grid');root.replaceChildren();
+    await renderClassParentEditor(Number(classPicker.value),root);
+  };
+  classPicker.onchange=showParentsForClass;
+  await showParentsForClass();
+  afsWireStaffManager(d);
+  const kind=$('#a-type'),sw=$('#a-subject-wrap');
+  const sync=()=>{sw.hidden=kind.value==='homeroom';$('#a-subject').required=kind.value!=='homeroom'};
+  kind.onchange=sync;sync();
+  const run=async(formId,outputId,fn)=>{
+    const form=$(formId),output=$(outputId),button=form.querySelector('button[type="submit"]');
+    button.disabled=true;output.className='note';output.textContent='Сохраняем…';
+    try{
+      const result=await fn();output.className='toast ok';output.textContent=result;
+      setTimeout(()=>{if(state.tab==='manage')renderManage()},1200);
+    }catch(e){output.className='toast bad';output.textContent=msg(e)}finally{button.disabled=false}
+  };
+  const rpc=async(p_action,p_payload)=>{
+    const {data,error}=await supabase.rpc('afs_manage_school',{p_action,p_payload});
+    if(error)throw error;return data.message;
+  };
+  $('#class-form').onsubmit=e=>{e.preventDefault();run('#class-form','#class-result',()=>rpc('add_class',{name:$('#new-class-name').value,grade:Number($('#new-class-grade').value)}))};
+  $('#subject-form').onsubmit=e=>{e.preventDefault();run('#subject-form','#subject-result',()=>rpc('add_subject',{name:$('#new-subject-name').value}))};
+  $('#assign-form').onsubmit=e=>{e.preventDefault();run('#assign-form','#assign-result',()=>rpc('assign_teacher',{
+    teacher_id:$('#a-teacher').value,class_id:Number($('#a-class').value),assignment_type:$('#a-type').value,
+    subject_id:$('#a-type').value==='subject_teacher'?Number($('#a-subject').value):null
+  }))};
+  $('#create-teacher').onsubmit=e=>{e.preventDefault();run('#create-teacher','#staff-result',async()=>{
+    const {data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw Error('Войдите повторно');
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/manage-staff`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_KEY,Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({full_name:$('#teacher-fullname').value.trim(),email:$('#teacher-email').value.trim(),role:'teacher'})});
+    const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(`HTTP ${res.status}: ${data.message||'Ошибка сервера'}`);
+    return 'Преподаватель создан. ID: '+data.user_id;
+  })};
+}
+async function renderParent(){
+  const root=$('#v-parent');
+  root.innerHTML='<div class="panel">Загружаем отзывы ваших детей…</div>';
+  if(!state.roles.includes('parent')){root.textContent='Нет доступа';return;}
+  const [{data:mine,error:e1},{data:links,error:e2}]=await Promise.all([
+    supabase.from('parents').select('id,full_name').eq('user_id',state.user.id),
+    supabase.from('student_parents').select('student_id,parent_id')
+  ]);
+  if(e1||e2){root.innerHTML=`<div class="toast bad">Ошибка доступа: ${esc(msg(e1||e2))}</div>`;return;}
+  const parentIds=new Set((mine||[]).map(p=>p.id));
+  const childIds=[...new Set((links||[]).filter(l=>parentIds.has(l.parent_id)).map(l=>l.student_id))];
+  if(!childIds.length){root.innerHTML='<div class="empty">Пока нет привязанных детей. Обратитесь к администрации школы.</div>';return;}
+  // Здесь используются только опубликованные записи, полученные с учётом RLS.
+  const children=state.students.filter(s=>childIds.includes(s.id));
+  const feedback=state.feedback.filter(f=>childIds.includes(f.student_id)&&f.status==='published');
+  root.innerHTML=`<div class="panel"><h2>Мои дети</h2><p class="note">Здесь отображается только опубликованная обратная связь.</p>
+    ${children.map(s=>`<div class="panel" style="margin-top:12px"><h2>${esc(s.full_name)}</h2>${feedback.filter(f=>f.student_id===s.id).map(f=>`<details class="panel" style="margin:8px 0"><summary>${esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))} · ${esc(state.subjects.find(x=>x.id===f.subject_id)?.name||'Обратная связь')}</summary><div class="layer bun top" style="margin-top:12px"><b>Похвала</b><div>${esc(f.praise)}</div></div><div class="layer fill"><b>Рекомендации</b><div>${esc(f.recommendations)}</div></div><div class="layer bun bot"><b>Поддержка</b><div>${esc(f.support)}</div></div><div data-files-for="${f.id}"></div><div class="actions" style="margin-top:12px"><button class="btn ghost" type="button" data-ack="${f.id}">Я ознакомился(-ась)</button><span class="note" data-receipt="${f.id}">Ожидает подтверждения</span></div></details>`).join('')||'<p class="note">Опубликованных отзывов пока нет.</p>'}</div>`).join('')}</div>`;
+  await showFeedbackFiles(feedback.map(f=>f.id),root);
+  root.querySelectorAll('details').forEach(details=>details.addEventListener('toggle',async()=>{
+    if(!details.open)return;
+    const b=details.querySelector('[data-ack]');
+    if(!b)return;
+    const id=Number(b.dataset.ack);
+    if(details.dataset.openRecorded==='true')return;
+    details.dataset.openRecorded='true';
+    const {data,error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:id,p_action:'open'});
+    const output=details.querySelector('[data-receipt]');
+    if(error){output.textContent='Не удалось сохранить просмотр: '+msg(error);details.dataset.openRecorded='';return;}
+    if(data?.acknowledged){output.textContent='Вы ознакомились';b.disabled=true;b.textContent='Ознакомление подтверждено';}
+    else output.textContent='Просмотрено · ожидает подтверждения';
+  }));
+  root.querySelectorAll('[data-ack]').forEach(b=>b.addEventListener('click',async()=>{
+    const output=root.querySelector(`[data-receipt="${b.dataset.ack}"]`);
+    b.disabled=true;output.textContent='Сохраняем подтверждение…';
+    const {error}=await supabase.rpc('afs_feedback_receipt',{p_feedback_id:Number(b.dataset.ack),p_action:'acknowledge'});
+    if(error){b.disabled=false;output.textContent='Ошибка: '+msg(error);return;}
+    b.textContent='Ознакомление подтверждено';output.textContent='Вы ознакомились';
+  }));
+}
+const {data:{session},error}=await supabase.auth.getSession();
+if(error)$('#login-error').textContent=msg(error);
+if(settingInvitationPassword){
+  $('#set-password-screen').hidden=false;
+  $('#login-screen').hidden=true;
+  $('#app-main').hidden=true;
+  $('#logout').hidden=true;
+  if(!session)$('#set-password-result').textContent='Если ссылка истекла, запросите новое приглашение.';
+}else await enter(session);
+</script>
