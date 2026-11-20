@@ -1148,6 +1148,8 @@ async function renderManage(){
     <div id="manage-parent-grid"></div>
     <div id="manage-parents-result" class="note" role="status"></div>
   </div><div class="panel"><div class="afs-staff-header"><div><h2>Сотрудники и назначения</h2><p class="note">Логины уже созданы. Существующие пароли не отображаются. Новый временный пароль заменяет предыдущий и показывается только после выдачи.</p></div><div class="actions">${state.roles.includes('superadmin')?'<button type="button" id="staff-issue-homeroom" class="btn ghost">Выдать пароли классным руководителям</button><button type="button" id="staff-issue-all" class="btn ghost">Выдать всем учителям</button>':''}</div></div>
+    <label style="margin:12px 0;max-width:440px">Поиск сотрудника<input id="afs-staff-search" type="search" placeholder="Фамилия или логин" autocomplete="off"></label>
+    <div id="afs-staff-search-count" class="note"></div>
     <div id="staff-access-result" class="note" role="status"></div>
     <div class="tw"><table><thead><tr><th>ФИО</th><th>Логин (email)</th><th>Роли</th><th>Назначения</th><th>Временный пароль</th><th></th></tr></thead><tbody>
     ${d.staff.map(x=>`<tr><td><b>${esc(x.full_name)}</b></td><td><span class="afs-login">${esc(x.email||'—')}</span><button type="button" class="afs-copy" data-staff-copy-login="${esc(x.id)}" title="Скопировать логин">Копировать</button></td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
@@ -1167,6 +1169,16 @@ async function renderManage(){
   classPicker.onchange=showParentsForClass;
   await showParentsForClass();
   afsWireStaffManager(d);
+  const staffSearch=$('#afs-staff-search');
+  const staffRows=[...$('#v-manage').querySelectorAll('[data-staff-edit]')].map(b=>b.closest('tr'));
+  const staffCount=$('#afs-staff-search-count');
+  const updateStaffFilter=()=>{
+    const term=staffSearch.value.trim().toLocaleLowerCase('ru');
+    let count=0;
+    staffRows.forEach(row=>{const visible=row.textContent.toLocaleLowerCase('ru').includes(term);row.hidden=!visible;if(visible)count++});
+    staffCount.textContent='Показано сотрудников: '+count+' из '+staffRows.length;
+  };
+  staffSearch.oninput=updateStaffFilter;updateStaffFilter();
   const kind=$('#a-type'),sw=$('#a-subject-wrap');
   const sync=()=>{sw.hidden=kind.value==='homeroom';$('#a-subject').required=kind.value!=='homeroom'};
   kind.onchange=sync;sync();
