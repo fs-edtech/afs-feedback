@@ -30,9 +30,9 @@ a.card:hover{transform:translateY(-3px);box-shadow:0 12px 25px #00000010}.glyph{
 <div id="loginView" class="login-wrap"><section class="login">
 <div class="brand"><img class="logo" src="https://fs-edtech.github.io/lesson-observation/assets/future-school-round.jpg" alt="Логотип школы"><div><strong>FUTURE SCHOOL</strong><small>INTERNAL PLATFORM</small></div></div>
 <h1>Единая школьная платформа</h1><p class="lead">Войдите под существующей учётной записью школы.</p>
-<form id="loginForm"><div class="field"><label for="username">Email или номер телефона</label><input id="username" required autocomplete="username" placeholder="Email или +7 7XX XXX XX XX"></div>
+<form id="loginForm" onsubmit="event.preventDefault(); return false;"><div class="field"><label for="username">Email или номер телефона</label><input id="username" required autocomplete="username" placeholder="Email или +7 7XX XXX XX XX"></div>
 <div class="field"><label for="password">Пароль</label><input id="password" type="password" required autocomplete="current-password" placeholder="Ваш пароль"></div>
-<div id="loginError" class="error" role="alert"></div><button class="btn" type="submit" id="loginBtn">Войти в систему</button></form>
+<div id="loginError" class="error" role="alert"></div><button class="btn" type="submit" id="loginBtn" disabled>Подключаем авторизацию…</button></form>
 <p class="role-line">Используйте свой действующий логин от платформы обратной связи. Пароли не передаются в чат и не хранятся в интерфейсе.</p>
 </section></div>
 <div id="appView" class="shell hidden">
@@ -58,8 +58,8 @@ a.card:hover{transform:translateY(-3px);box-shadow:0 12px 25px #00000010}.glyph{
 </main></div>
 <button id="aiButton" class="ai hidden" type="button">✦ Future School AI</button>
 <div id="aiDialog" class="ai-dialog hidden" role="dialog" aria-label="Future School AI"><h3>Future School AI</h3><p>Помощник будет отвечать на вопросы по разрешённым школьным данным после подключения защищённых серверных инструментов. Сейчас ответы не генерируются.</p><button class="btn secondary" id="aiClose">Закрыть</button></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+function initPortal(){
 const URL='https://wvkcafxruzguifybeeab.supabase.co';
 const KEY='sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
 const client=window.supabase.createClient(URL,KEY);
@@ -80,7 +80,7 @@ async function show(session){
  $('adminCard').classList.toggle('hidden',!superadmin);$('adminNav').classList.toggle('hidden',!superadmin);
  const obs=roles.some(x=>['superadmin','director','deputy','teacher','staff','tutor'].includes(x));
  $('obsCard').classList.toggle('hidden',!obs);$('obsNav').classList.toggle('hidden',!obs);
- }catch(e){$('loginError').textContent=e.message||'Ошибка доступа';await client.auth.signOut();$('appView').classList.add('hidden');$('loginView').classList.remove('hidden');$('aiButton').classList.add('hidden')}
+ }catch(e){$('loginError').textContent=(e.message||'Ошибка доступа')+' Проверьте подключение и повторите вход.';$('appView').classList.add('hidden');$('loginView').classList.remove('hidden');$('aiButton').classList.add('hidden')}
 }
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('loginBtn');btn.disabled=true;$('loginError').textContent='';try{
  const input=$('username').value.trim(), pw=$('password').value;
@@ -92,5 +92,25 @@ $('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=
 $('logoutBtn').onclick=async()=>{await client.auth.signOut();await show(null)};
 $('aiButton').onclick=()=>$('aiDialog').classList.toggle('hidden');$('aiClose').onclick=()=>$('aiDialog').classList.add('hidden');$('aiNav').onclick=()=>{$('aiDialog').classList.remove('hidden')};
 client.auth.onAuthStateChange((_event,session)=>{if(!session)show(null)});
-client.auth.getSession().then(({data})=>show(data.session));
+$('loginBtn').disabled=false;$('loginBtn').textContent='Войти в систему';
+client.auth.getSession().then(({data,error})=>{if(error){$('loginError').textContent='Не удалось восстановить сессию: '+error.message;return}show(data.session)}).catch(e=>{$('loginError').textContent='Не удалось проверить сессию: '+e.message});
+}
+(function loadAuthLibrary(){
+ const urls=[
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+ ];
+ const info=document.getElementById('loginError');
+ let i=0;
+ function next(){
+  if(i>=urls.length){info.textContent='Не удалось загрузить модуль авторизации. Проверьте доступ к CDN или расширения блокировки браузера. Пароль менять не нужно.';document.getElementById('loginBtn').textContent='Авторизация недоступна';return;}
+  const src=urls[i++];
+  const script=document.createElement('script');script.src=src;script.async=true;
+  script.onload=()=>{if(window.supabase?.createClient){try{initPortal()}catch(e){info.textContent='Ошибка запуска входа: '+(e?.message||'неизвестная ошибка');}}else next()};
+  script.onerror=next;
+  document.head.appendChild(script);
+ }
+ next();
+})();
 </script></body></html>
