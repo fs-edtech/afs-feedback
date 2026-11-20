@@ -375,7 +375,29 @@ async function enter(session){
   state.user=session.user; setLogin(true);
   try{await loadData();await fsHandleCaptureLink()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
-$('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
+$('#login-form').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const output=$('#login-error'),username=$('#login-email').value.trim(),password=$('#login-password').value;
+ const submit=e.currentTarget.querySelector('button[type="submit"]');
+ submit.disabled=true;output.textContent='Выполняется вход…';
+ try{
+  const isPhone=/^(?:\\+?7|8)?[\\d\\s()\\-]{10,20}$/.test(username);
+  let loginEmail=username;
+  if(isPhone){
+   const phone=normalizeKzPhone(username);
+   if(!phone)throw Error('Неверный формат телефона');
+   const {data:alias,error:aliasError}=await supabase.rpc('fs_parent_login_alias',{p_phone:phone});
+   if(aliasError)throw Error('Не удалось проверить номер телефона: '+msg(aliasError));
+   if(!alias)throw Error('Неверный номер телефона или пароль. Для сотрудников используйте рабочий email.');
+   loginEmail=alias;
+  }
+  const {data,error}=await supabase.auth.signInWithPassword({email:loginEmail,password});
+  if(error)throw error;
+  output.textContent='';
+  await enter(data.session);
+ }catch(error){output.textContent=error?.message==='Invalid login credentials'?'Неверный логин или пароль.':msg(error)}
+ finally{submit.disabled=false}
+});
 $('#forgot-password').addEventListener('click',async()=>{
  const email=$('#login-email').value.trim(),output=$('#login-error');
  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){output.textContent='Введите email учётной записи в поле входа, затем нажмите «Восстановить пароль». Для входа по телефону обратитесь к администрации.';return}
