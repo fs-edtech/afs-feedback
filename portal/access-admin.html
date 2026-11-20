@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Future School — роли и разрешения</title>
+<style>
+:root{--ink:#181817;--soft:#78756f;--paper:#f7f5ef;--card:#fff;--line:#e6e2d9;--accent:#171717}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 system-ui,-apple-system,sans-serif}
+header{background:white;border-bottom:1px solid var(--line);padding:22px max(22px,calc((100vw - 1160px)/2));display:flex;gap:18px;align-items:center;justify-content:space-between}
+header b{font-size:20px;letter-spacing:-.6px}header small{color:var(--soft);display:block;font-size:12px}a{color:inherit;text-underline-offset:3px}
+main{max-width:1160px;margin:32px auto;padding:0 20px}.intro{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+h1{font-size:28px;letter-spacing:-1px;margin:0}p{color:var(--soft)}.layout{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:22px}
+.panel{background:white;border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 4px 22px #00000006}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:8px}select,input{width:100%;padding:12px;background:white;border:1px solid #d6d2cb;border-radius:9px;color:var(--ink);font:inherit}
+button{border:1px solid #d6d2cb;background:white;border-radius:9px;padding:9px 12px;cursor:pointer;font:inherit}button:hover{background:var(--paper)}button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}
+.row b{display:block;font-size:14px}.row small{font-size:12px;color:var(--soft)}
+.role-check{width:19px;height:19px;accent-color:var(--ink)}.item-select{width:auto;min-width:170px;font-size:13px}
+.module{font-weight:750;margin:22px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.7px}
+.tag{display:inline-block;background:var(--paper);border:1px solid var(--line);padding:5px 9px;border-radius:100px;font-size:12px}
+#notice{margin-top:14px;font-size:13px}#notice.error{color:#af2929}#notice.ok{color:#257b43}
+@media(max-width:760px){.layout{grid-template-columns:1fr}header{padding:18px 20px}.panel{padding:16px}.row{align-items:start}.item-select{min-width:130px}}
+</style></head>
+<body>
+<header><div><b>FUTURE SCHOOL</b><small>Единое управление доступом</small></div><a href="/feedback/">← Обратная связь</a></header>
+<main><div class="intro"><div><h1>Роли и разрешения</h1><p>Назначайте полномочия сотрудникам без изменения их логинов и паролей.</p></div><span class="tag">Только суперадминистратор</span></div>
+<div class="layout">
+<section class="panel"><label for="person">Сотрудник</label><select id="person"><option value="">Загрузка сотрудников…</option></select>
+<p>Выберите человека. Справа отобразятся его роли и индивидуальные разрешения.</p>
+<div id="account-summary" class="tag">Учётная запись не выбрана</div></section>
+<section class="panel"><div id="editor"><p>Выберите сотрудника слева.</p></div><div id="notice" role="status" aria-live="polite"></div></section>
+</div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const URL='https://wvkcafxruzguifybeeab.supabase.co';
+const KEY='sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
+const db=window.supabase.createClient(URL,KEY);
+const byId=id=>document.getElementById(id);
+const note=(message,kind='')=>{const n=byId('notice');n.textContent=message;n.className=kind;};
+const editableRoles=[['director','Директор'],['deputy','Завуч'],['teacher','Преподаватель'],['tutor','Тьютор'],['staff','Сотрудник']];
+let staff=[];
+function element(tag,text,cl){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cl)el.className=cl;return el}
+async function rpc(name,values){const {data,error}=await db.rpc(name,values);if(error)throw Error(error.message);return data}
+async function load(){
+ const {data:{user},error}=await db.auth.getUser();
+ if(error||!user){byId('editor').textContent='Для управления правами сначала войдите как суперадминистратор в систему обратной связи.';return}
+ try{
+  staff=await rpc('afs_staff_directory',{});
+  staff=Array.isArray(staff)?staff:[];
+  staff.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
+  const picker=byId('person');picker.replaceChildren(new Option('Выберите сотрудника',''));
+  for(const p of staff)picker.add(new Option(p.full_name,p.id));
+  picker.onchange=()=>render(picker.value);
+  byId('editor').textContent='Выберите сотрудника слева.';
+ }catch(e){note('Не удалось загрузить сотрудников: '+e.message,'error')}
+}
+async function render(id){
+ byId('editor').textContent='Загрузка доступа…';note('');
+ if(!id){byId('editor').textContent='Выберите сотрудника слева.';return}
+ const p=staff.find(x=>x.id===id);
+ byId('account-summary').textContent=p?.full_name||'Сотрудник';
+ try{
+  const snap=await rpc('fs_admin_access_snapshot',{p_target:id});
+  const root=byId('editor');root.replaceChildren();
+  root.append(element('h2','Роли сотрудника'));
+  const info=element('p','Роль родителя присваивается через проверенную связь с ребёнком. Суперадмин защищён от изменения своей роли на этой странице.');
+  root.append(info);
+  for(const [code,label] of editableRoles){
+   const row=element('div',undefined,'row');const caption=element('div');
+   caption.append(element('b',label),element('small',code));row.append(caption);
+   const inp=element('input');inp.type='checkbox';inp.className='role-check';inp.checked=snap.roles.includes(code);
+   inp.setAttribute('aria-label',label);
+   inp.onchange=async()=>{
+    inp.disabled=true;note('Сохраняем роль…');
+    try{await rpc('fs_admin_set_role',{p_target:id,p_role:code,p_enabled:inp.checked});note('Роль обновлена','ok');await render(id)}
+    catch(e){inp.checked=!inp.checked;note(e.message,'error')}finally{inp.disabled=false}
+   };
+   row.append(inp);root.append(row);
+  }
+  root.append(element('h2','Индивидуальные разрешения'));
+  root.append(element('p','«По роли» применяет базовые правила. «Разрешить» и «Запретить» переопределяют их для этого человека.'));
+  let previous='';
+  for(const perm of snap.permissions){
+   if(perm.module!==previous){previous=perm.module;root.append(element('div',previous,'module'))}
+   const row=element('div',undefined,'row');const caption=element('div');
+   caption.append(element('b',perm.label),element('small',perm.code));row.append(caption);
+   const sel=element('select');sel.className='item-select';sel.setAttribute('aria-label',perm.label);
+   for(const [value,label] of [['default','По роли'],['true','Разрешить'],['false','Запретить']])sel.add(new Option(label,value));
+   sel.value=perm.override===null?'default':String(perm.override);
+   sel.onchange=async()=>{
+    sel.disabled=true;note('Сохраняем разрешение…');
+    try{await rpc('fs_admin_set_permission',{p_target:id,p_code:perm.code,p_allowed:sel.value==='default'?null:sel.value==='true'});note('Разрешение обновлено','ok');await render(id)}
+    catch(e){note(e.message,'error')}finally{sel.disabled=false}
+   };row.append(sel);root.append(row);
+  }
+ }catch(e){byId('editor').textContent='Не удалось открыть карточку.';note(e.message,'error')}
+}
+load();
+</script></body></html>
