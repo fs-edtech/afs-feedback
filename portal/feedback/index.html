@@ -1362,6 +1362,13 @@ async function weeklyRenderParent(){
   const list=reports.filter(r=>r.student_id===fsParentChildId);
   const host=root.querySelector('#fs-parent-reports');
   host.innerHTML=list.length?list.map(r=>'<div class="fs-week-row" style="padding:14px"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div><div class="note">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join(''):'<p class="note">За выбранного ребёнка пока нет опубликованных отчётов.</p>';
+  const oldFeedback=state.feedback.filter(f=>f.student_id===fsParentChildId&&f.status==='published');
+  if(oldFeedback.length){
+   const archive=document.createElement('details');archive.className='panel';archive.style.marginTop='18px';
+   archive.innerHTML='<summary style="cursor:pointer;font-weight:650">Архив индивидуальных отзывов до перехода на единые отчёты ('+oldFeedback.length+')</summary><p class="note" style="margin-top:9px">Эти отзывы были опубликованы по прежней схеме и сохранены для истории.</p>'+oldFeedback.map(f=>'<details class="panel" style="margin:8px 0"><summary>'+esc(new Date(f.published_at||f.created_at).toLocaleDateString('ru-RU'))+' · '+esc(state.subjects.find(s=>s.id===f.subject_id)?.name||'Предмет')+'</summary><div class="layer bun top"><b>Достижения</b><p>'+esc(f.praise)+'</p></div><div class="layer fill"><b>Рекомендации</b><p>'+esc(f.recommendations)+'</p></div><div class="layer bun bot"><b>Поддержка</b><p>'+esc(f.support)+'</p></div><div data-files-for="'+f.id+'"></div></details>').join('');
+   host.append(archive);
+   showFeedbackFiles(oldFeedback.map(f=>f.id),archive).catch(e=>console.warn('Архив вложений:',e));
+  }
   for(const r of list){
    const view=host.querySelector('[data-parent-view="'+r.id+'"]');view.onclick=async()=>{try{await fsRpc('fs_weekly_receipt',{p_report_id:r.id,p_action:'open'});r.opened_at=r.opened_at||new Date().toISOString()}catch(e){alert('Просмотр не зафиксирован: '+e.message)}
     fsShowModal(r,r.student_name,r.class_name,{ack:true,acknowledged:!!r.acknowledged_at})};
