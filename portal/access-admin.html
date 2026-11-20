@@ -116,6 +116,7 @@ select.scope{width:165px;padding:9px;font-size:12px}
        status('Аккаунт '+login+' создан. Откройте карточку сотрудника ниже и назначьте директорскую / завучскую роль. Пароль можно выдать в разделе обратной связи.','ok');
        people=await rpc('afs_staff_directory',{});people.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
        $('search').value=candidate.full_name;activeId=user.id;list();await render(user.id);
+       status('Готово: '+candidate.full_name+' добавлен. Логин: '+login+'. Сначала выдайте пароль в «Обратная связь → Сотрудники и управление», затем назначьте здесь роли директора/завуча.','ok');
        btn.textContent='Подключён';btn.disabled=true;
       }catch(e){status('Ошибка: '+e.message,'err');btn.disabled=false;btn.textContent='Повторить подключение'}
      };
