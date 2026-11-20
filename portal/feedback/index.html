@@ -171,6 +171,36 @@ td.num,th.num{text-align:right}
 .afs-review>summary>span:nth-child(2){color:var(--muted);font-size:12px;flex:1;min-width:160px}
 .afs-review .layer{margin-top:9px}
 
+
+/* Future School unified workspace skin */
+:root,:root[data-theme="light"]{
+ --bg:#F6F4EF;--surface:#FFFFFF;--sunk:#F0EDE6;--line:#E3DED4;
+ --fg:#1A1A18;--muted:#746E64;--navy:#1A1A18;--navy-fg:#FFFFFF;
+ --bun:#97724C;--bun-bg:#F6EBDD;--fill:#366C55;--fill-bg:#E8F1EA;--focus:#8B7561;
+ --r:14px;
+}
+body{font-family:"Golos Text",system-ui,sans-serif}
+header{box-shadow:0 2px 16px #00000005}
+.brand b{font-family:var(--f-body);letter-spacing:-.35px;font-size:19px}
+.tabs{border-radius:13px}
+.tabs button{border-radius:10px}
+.panel,.tile{box-shadow:0 4px 18px #00000005}
+.btn.primary{background:#1A1A18;color:white}
+.btn.ghost{background:#F0EDE6}
+.afs-staff-dialog{width:min(920px,calc(100vw - 22px));padding:clamp(16px,3vw,30px);border-radius:20px}
+.afs-staff-dialog h2{color:var(--fg);font-family:var(--f-body);font-size:22px;letter-spacing:-.6px}
+.afs-bulk-row{border:1px solid var(--line);border-radius:14px;background:#FAF9F6;padding:16px;display:grid;gap:12px}
+.afs-bulk-row-head{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}
+.afs-bulk-classes{display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:6px;max-height:175px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:white;padding:10px}
+.afs-bulk-class-choice{display:flex;flex-direction:row;align-items:center;gap:7px;color:var(--fg);font-size:13px;font-weight:600;background:var(--bg);border-radius:7px;padding:8px}
+.afs-bulk-class-choice input{width:16px;height:16px;accent-color:#1A1A18}
+.afs-bulk-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.afs-bulk-search{max-width:235px}
+.afs-existing-count{color:var(--muted);font-size:12px;font-weight:600}
+.afs-assignments{max-height:250px;overflow:auto}
+.afs-add-assignment{background:#FCFAF6}
+@media(max-width:620px){.afs-bulk-row-head{grid-template-columns:1fr auto}.afs-bulk-row-head .afs-bulk-subject-wrap{grid-column:1/-1}.afs-bulk-class-choice{font-size:12px}.afs-staff-dialog{max-height:92vh}}
+
 </style>
 
 <header><div class="wrap hrow">
@@ -962,9 +992,13 @@ function afsWireStaffManager(d){
       <label>Логин (изменение отключено)<input value="${esc(staff.email||'')}" readonly></label>
       <div class="note">Роли: ${esc((staff.roles||[]).join(', '))}. Роли безопасности здесь не изменяются.</div>
       <div class="afs-assignments"><b>Назначения</b>${assignments.length?assignments.map(a=>`<div class="afs-assignment"><span>${esc(labelAssignment(a))}</span><button type="button" class="btn ghost" data-remove-assignment="${a.id}">Снять</button></div>`).join(''):'<p class="note">Назначений нет</p>'}</div>
-      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment"><b>Назначить несколько классов и предметов</b><p class="note">Создайте нужное число строк. Сохранение выполняется один раз, не закрывая карточку после каждого назначения.</p>
-      <div id="afs-bulk-rows" style="display:grid;gap:10px"></div>
-      <div class="actions"><button type="button" class="btn ghost" id="afs-bulk-new-row">+ Ещё класс / предмет</button><button type="button" class="btn primary" id="afs-bulk-save">Сохранить все назначения</button></div></div>`:''}
+      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment">
+        <b>Педагогическая нагрузка · несколько классов сразу</b>
+        <p class="note">Выберите предмет, отметьте сразу все нужные классы. Для другого предмета добавьте ещё группу. После сохранения карточка останется открытой.</p>
+        <div id="afs-bulk-rows" style="display:grid;gap:12px"></div>
+        <div class="actions"><button type="button" class="btn ghost" id="afs-bulk-new-row">+ Добавить другой предмет</button>
+        <button type="button" class="btn primary" id="afs-bulk-save">Сохранить нагрузку</button></div>
+      </div>`:''}
       <button type="button" class="btn primary" id="afs-edit-save-name">Сохранить ФИО</button><div class="note" id="afs-edit-status" role="status"></div></div>`;
     const out=body.querySelector('#afs-edit-status');
     async function run(call){out.className='note';out.textContent='Сохраняем…';try{await call();dialog.close();await renderManage();}catch(e){out.className='toast bad';out.textContent='Ошибка: '+msg(e);}}
@@ -978,48 +1012,79 @@ function afsWireStaffManager(d){
       if(!assignment||!confirm('Снять назначение: '+labelAssignment(assignment)+'?'))return;
       run(async()=>{const {error}=await supabase.rpc('afs_staff_edit',{p_action:'remove_assignment',p_payload:{assignment_id:assignment.id}});if(error)throw error;});
     });
+
     const rowsBox=body.querySelector('#afs-bulk-rows');
     if(rowsBox){
+      let added=0;
+      const existing=new Set(assignments.map(a=>[a.class_id,a.assignment_type,a.subject_id??''].join(':')));
+      const appendAssignment=(item)=>{
+        if(!item?.id)return;
+        assignments.push(item);
+        d.assignments.push(item);
+        existing.add([item.class_id,item.assignment_type,item.subject_id??''].join(':'));
+        const container=body.querySelector('.afs-assignments');
+        container.querySelector('.afs-existing-count')?.remove();
+        const line=document.createElement('div');line.className='afs-assignment';
+        const title=document.createElement('span');title.textContent=labelAssignment(item);
+        const del=document.createElement('button');del.type='button';del.className='btn ghost';del.textContent='Снять';
+        del.onclick=async()=>{
+          if(!confirm('Снять назначение: '+labelAssignment(item)+'?'))return;
+          del.disabled=true;
+          const {error}=await supabase.rpc('afs_staff_edit',{p_action:'remove_assignment',p_payload:{assignment_id:item.id}});
+          if(error){del.disabled=false;out.className='toast bad';out.textContent=msg(error);return;}
+          const key=[item.class_id,item.assignment_type,item.subject_id??''].join(':');
+          existing.delete(key);d.assignments=d.assignments.filter(x=>x.id!==item.id);
+          const pos=assignments.findIndex(x=>x.id===item.id);if(pos>=0)assignments.splice(pos,1);
+          line.remove();out.className='toast ok';out.textContent='Назначение снято';
+        };
+        line.append(title,del);container.append(line);
+      };
       const addRow=()=>{
-        const row=document.createElement('div');
-        row.className='afs-bulk-row';
-        row.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:9px';
-        row.innerHTML=`<label>Класс<select class="afs-bulk-class">${d.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
-          <label>Тип<select class="afs-bulk-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label>
-          <button type="button" class="btn ghost afs-bulk-remove" aria-label="Убрать строку">×</button>
-          <label class="afs-bulk-subject-wrap" style="grid-column:1/-1">Предмет<select class="afs-bulk-subject">${d.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>`;
-        const type=row.querySelector('.afs-bulk-type');
-        const update=()=>row.querySelector('.afs-bulk-subject-wrap').hidden=type.value==='homeroom';
-        type.onchange=update;update();
+        const row=document.createElement('div');row.className='afs-bulk-row';
+        const classesHtml=d.classes.map(c=>`<label class="afs-bulk-class-choice" data-class-name="${esc(c.name.toLowerCase())}">
+          <input type="checkbox" class="afs-bulk-class" value="${c.id}"><span>${esc(c.name)}</span></label>`).join('');
+        row.innerHTML=`<div class="afs-bulk-row-head">
+          <label>Тип назначения<select class="afs-bulk-type"><option value="subject_teacher">Преподаватель</option><option value="homeroom">Классный руководитель</option></select></label>
+          <label class="afs-bulk-subject-wrap">Предмет<select class="afs-bulk-subject">${d.subjects.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
+          <button type="button" class="btn ghost afs-bulk-remove" aria-label="Убрать группу">×</button></div>
+          <div class="afs-bulk-toolbar"><b>Выберите классы</b><input class="afs-bulk-search" placeholder="Поиск класса, например 5D" aria-label="Найти класс"></div>
+          <div class="afs-bulk-classes">${classesHtml}</div><small class="afs-existing-count">Выбрано классов: 0</small>`;
+        const type=row.querySelector('.afs-bulk-type'),boxes=[...row.querySelectorAll('.afs-bulk-class')];
+        const count=()=>row.querySelector('.afs-existing-count').textContent='Выбрано классов: '+boxes.filter(x=>x.checked).length;
+        type.onchange=()=>{row.querySelector('.afs-bulk-subject-wrap').hidden=type.value==='homeroom';if(type.value==='homeroom'){let selected=boxes.filter(b=>b.checked);selected.slice(1).forEach(b=>b.checked=false)}count()};
+        boxes.forEach(box=>box.onchange=()=>{if(type.value==='homeroom'&&box.checked){boxes.filter(b=>b!==box).forEach(b=>b.checked=false)}count()});
+        row.querySelector('.afs-bulk-search').oninput=e=>{const v=e.target.value.trim().toLowerCase();row.querySelectorAll('[data-class-name]').forEach(label=>label.hidden=!label.dataset.className.includes(v))};
         row.querySelector('.afs-bulk-remove').onclick=()=>row.remove();
         rowsBox.append(row);
       };
-      body.querySelector('#afs-bulk-new-row').onclick=addRow;
-      addRow();
+      body.querySelector('#afs-bulk-new-row').onclick=addRow;addRow();
       body.querySelector('#afs-bulk-save').onclick=async()=>{
-        const rows=[...rowsBox.querySelectorAll('.afs-bulk-row')];
-        if(!rows.length){out.className='toast bad';out.textContent='Добавьте хотя бы одно назначение';return;}
-        const payloads=rows.map(row=>{
-          const type=row.querySelector('.afs-bulk-type').value;
-          return {teacher_id:staff.id,class_id:Number(row.querySelector('.afs-bulk-class').value),
-            assignment_type:type,subject_id:type==='homeroom'?null:Number(row.querySelector('.afs-bulk-subject').value)};
-        });
-        const keys=payloads.map(p=>[p.class_id,p.assignment_type,p.subject_id??''].join(':'));
-        if(new Set(keys).size!==keys.length){out.className='toast bad';out.textContent='Есть повторяющиеся строки. Уберите дубликаты.';return;}
+        const groups=[...rowsBox.querySelectorAll('.afs-bulk-row')],payloads=[];
+        for(const group of groups){
+          const kind=group.querySelector('.afs-bulk-type').value;
+          const subject=kind==='homeroom'?null:Number(group.querySelector('.afs-bulk-subject').value);
+          const classes=[...group.querySelectorAll('.afs-bulk-class:checked')].map(x=>Number(x.value));
+          for(const class_id of classes)payloads.push({teacher_id:staff.id,class_id,assignment_type:kind,subject_id:subject});
+        }
+        if(!payloads.length){out.className='toast bad';out.textContent='Отметьте хотя бы один класс';return}
+        const keys=payloads.map(x=>[x.class_id,x.assignment_type,x.subject_id??''].join(':'));
+        if(new Set(keys).size!==keys.length){out.className='toast bad';out.textContent='Одинаковый класс и предмет выбраны несколько раз. Уберите дубликаты.';return}
+        const pending=payloads.filter((x,i)=>!existing.has(keys[i]));
+        if(!pending.length){out.className='note';out.textContent='Все выбранные назначения уже существуют';return}
         const button=body.querySelector('#afs-bulk-save');button.disabled=true;
         let done=0;
         try{
-          for(const payload of payloads){
-            const {error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});
+          for(const payload of pending){
+            const {data,error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});
             if(error)throw error;
+            appendAssignment({...payload,user_id:staff.id,id:data?.id});
             done++;
-            out.className='note';out.textContent='Сохранено '+done+' из '+payloads.length;
+            out.className='note';out.textContent='Сохранено '+done+' из '+pending.length;
           }
-          out.className='toast ok';out.textContent='Все '+done+' назначения обработаны.';
-          dialog.close();await renderManage();
-        }catch(e){
-          out.className='toast bad';out.textContent='Сохранено '+done+' из '+payloads.length+'. Ошибка: '+msg(e)+'. Закройте и откройте карточку, чтобы увидеть сохранённые строки.';
-        }finally{button.disabled=false;}
+          out.className='toast ok';out.textContent='Готово: '+done+' назначений сохранено. Можно продолжать работать с тем же преподавателем.';
+          rowsBox.replaceChildren();addRow();
+        }catch(e){out.className='toast bad';out.textContent='Сохранено '+done+' из '+pending.length+'. Ошибка: '+msg(e)+'. Сохранённые назначения показаны выше.'}
+        finally{button.disabled=false}
       };
     }
     dialog.showModal();
