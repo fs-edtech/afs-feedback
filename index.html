@@ -962,10 +962,9 @@ function afsWireStaffManager(d){
       <label>Логин (изменение отключено)<input value="${esc(staff.email||'')}" readonly></label>
       <div class="note">Роли: ${esc((staff.roles||[]).join(', '))}. Роли безопасности здесь не изменяются.</div>
       <div class="afs-assignments"><b>Назначения</b>${assignments.length?assignments.map(a=>`<div class="afs-assignment"><span>${esc(labelAssignment(a))}</span><button type="button" class="btn ghost" data-remove-assignment="${a.id}">Снять</button></div>`).join(''):'<p class="note">Назначений нет</p>'}</div>
-      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment"><b>Добавить назначение</b><label>Класс<select id="afs-edit-class">${d.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
-      <label>Тип<select id="afs-edit-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label>
-      <label id="afs-edit-subject-wrap">Предмет<select id="afs-edit-subject">${d.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
-      <button type="button" class="btn ghost" id="afs-edit-add-assignment">Добавить назначение</button></div>`:''}
+      ${staff.roles?.includes('teacher')?`<div class="afs-add-assignment"><b>Назначить несколько классов и предметов</b><p class="note">Создайте нужное число строк. Сохранение выполняется один раз, не закрывая карточку после каждого назначения.</p>
+      <div id="afs-bulk-rows" style="display:grid;gap:10px"></div>
+      <div class="actions"><button type="button" class="btn ghost" id="afs-bulk-new-row">+ Ещё класс / предмет</button><button type="button" class="btn primary" id="afs-bulk-save">Сохранить все назначения</button></div></div>`:''}
       <button type="button" class="btn primary" id="afs-edit-save-name">Сохранить ФИО</button><div class="note" id="afs-edit-status" role="status"></div></div>`;
     const out=body.querySelector('#afs-edit-status');
     async function run(call){out.className='note';out.textContent='Сохраняем…';try{await call();dialog.close();await renderManage();}catch(e){out.className='toast bad';out.textContent='Ошибка: '+msg(e);}}
@@ -979,14 +978,49 @@ function afsWireStaffManager(d){
       if(!assignment||!confirm('Снять назначение: '+labelAssignment(assignment)+'?'))return;
       run(async()=>{const {error}=await supabase.rpc('afs_staff_edit',{p_action:'remove_assignment',p_payload:{assignment_id:assignment.id}});if(error)throw error;});
     });
-    const type=body.querySelector('#afs-edit-type');
-    if(type){
-      const update=()=>body.querySelector('#afs-edit-subject-wrap').hidden=type.value==='homeroom';
-      type.onchange=update;update();
-      body.querySelector('#afs-edit-add-assignment').onclick=()=>run(async()=>{
-        const payload={teacher_id:staff.id,class_id:Number(body.querySelector('#afs-edit-class').value),assignment_type:type.value,subject_id:type.value==='homeroom'?null:Number(body.querySelector('#afs-edit-subject').value)};
-        const {error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});if(error)throw error;
-      });
+    const rowsBox=body.querySelector('#afs-bulk-rows');
+    if(rowsBox){
+      const addRow=()=>{
+        const row=document.createElement('div');
+        row.className='afs-bulk-row';
+        row.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:9px';
+        row.innerHTML=`<label>Класс<select class="afs-bulk-class">${d.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+          <label>Тип<select class="afs-bulk-type"><option value="subject_teacher">Предметник</option><option value="homeroom">Классный руководитель</option></select></label>
+          <button type="button" class="btn ghost afs-bulk-remove" aria-label="Убрать строку">×</button>
+          <label class="afs-bulk-subject-wrap" style="grid-column:1/-1">Предмет<select class="afs-bulk-subject">${d.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>`;
+        const type=row.querySelector('.afs-bulk-type');
+        const update=()=>row.querySelector('.afs-bulk-subject-wrap').hidden=type.value==='homeroom';
+        type.onchange=update;update();
+        row.querySelector('.afs-bulk-remove').onclick=()=>row.remove();
+        rowsBox.append(row);
+      };
+      body.querySelector('#afs-bulk-new-row').onclick=addRow;
+      addRow();
+      body.querySelector('#afs-bulk-save').onclick=async()=>{
+        const rows=[...rowsBox.querySelectorAll('.afs-bulk-row')];
+        if(!rows.length){out.className='toast bad';out.textContent='Добавьте хотя бы одно назначение';return;}
+        const payloads=rows.map(row=>{
+          const type=row.querySelector('.afs-bulk-type').value;
+          return {teacher_id:staff.id,class_id:Number(row.querySelector('.afs-bulk-class').value),
+            assignment_type:type,subject_id:type==='homeroom'?null:Number(row.querySelector('.afs-bulk-subject').value)};
+        });
+        const keys=payloads.map(p=>[p.class_id,p.assignment_type,p.subject_id??''].join(':'));
+        if(new Set(keys).size!==keys.length){out.className='toast bad';out.textContent='Есть повторяющиеся строки. Уберите дубликаты.';return;}
+        const button=body.querySelector('#afs-bulk-save');button.disabled=true;
+        let done=0;
+        try{
+          for(const payload of payloads){
+            const {error}=await supabase.rpc('afs_manage_school',{p_action:'assign_teacher',p_payload:payload});
+            if(error)throw error;
+            done++;
+            out.className='note';out.textContent='Сохранено '+done+' из '+payloads.length;
+          }
+          out.className='toast ok';out.textContent='Все '+done+' назначения обработаны.';
+          dialog.close();await renderManage();
+        }catch(e){
+          out.className='toast bad';out.textContent='Сохранено '+done+' из '+payloads.length+'. Ошибка: '+msg(e)+'. Закройте и откройте карточку, чтобы увидеть сохранённые строки.';
+        }finally{button.disabled=false;}
+      };
     }
     dialog.showModal();
   });
