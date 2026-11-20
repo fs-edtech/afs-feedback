@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f6f3ed">
+<title>Future School · Единая платформа</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f4ee;--white:#fff;--ink:#171714;--muted:#77756e;--line:#e7e4dc;--beige:#ede6d9;--green:#40765e;--radius:20px}
+*{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--bg);font:14px/1.5 Manrope,system-ui,sans-serif}button,input{font:inherit}
+button{cursor:pointer}.hidden{display:none!important}.shell{min-height:100vh;display:grid;grid-template-columns:265px minmax(0,1fr)}.side{background:#191a19;color:#f9f7f0;padding:28px 20px;display:flex;flex-direction:column;gap:28px}
+.brand{display:flex;align-items:center;gap:12px}.logo{width:46px;height:46px;object-fit:cover;background:#fff;border-radius:50%}.brand strong{display:block;font-size:16px;letter-spacing:-.5px}.brand small{color:#b6b7b3;font-size:10px;letter-spacing:1.3px}
+.nav-title{font-size:10px;color:#999b95;letter-spacing:1.7px;margin:0 12px 9px;font-weight:800}
+nav{display:grid;gap:7px}nav a{color:#b7b8b3;text-decoration:none;padding:12px 14px;border-radius:11px;display:flex;gap:12px;align-items:center;font-weight:600}nav a.active,nav a:hover{background:#333530;color:#fff}
+nav a span{font-size:19px}.side-foot{margin-top:auto;border-top:1px solid #383936;padding-top:18px;color:#a5a69e;font-size:12px}
+.main{min-width:0;padding:27px clamp(20px,4vw,62px) 70px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:23px}.top small{display:block;color:var(--muted);font-size:12px}.top b{font-size:14px}.user-pill{border:1px solid var(--line);border-radius:999px;padding:9px 15px;background:white;display:flex;gap:10px;align-items:center;font-size:12px}
+h1{font-size:clamp(26px,3vw,39px);line-height:1.18;letter-spacing:-1.5px;margin:0 0 12px;font-weight:800}.lead{color:var(--muted);font-size:14px;margin:0}.hero{margin-top:34px;display:flex;justify-content:space-between;gap:20px;align-items:center}
+.tag{display:inline-block;background:var(--beige);border-radius:999px;padding:7px 13px;font-weight:700;font-size:11px;letter-spacing:.3px;margin-bottom:18px}.hero-mark{font-size:56px;background:#e9e4d9;border-radius:22px;width:100px;height:100px;display:grid;place-items:center}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin:35px 0 16px}h2{font-size:18px;letter-spacing:-.6px;margin:0}.section-head small{color:var(--muted)}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.card{min-width:0;background:white;border:1px solid var(--line);border-radius:var(--radius);padding:25px;min-height:207px;display:flex;flex-direction:column;align-items:flex-start;gap:9px;text-decoration:none;color:inherit;transition:transform .15s,box-shadow .15s}
+a.card:hover{transform:translateY(-3px);box-shadow:0 12px 25px #00000010}.glyph{width:46px;height:46px;background:var(--bg);border-radius:13px;display:grid;place-items:center;font-size:23px}.card h3{font-size:16px;letter-spacing:-.35px;margin:8px 0 0}.card p{margin:0;font-size:12px;color:var(--muted)}.card .foot{margin-top:auto;font-size:11px;font-weight:800;color:#4d6757}.card.is-disabled{opacity:.65}.card.is-disabled .foot{color:#888}
+.note{background:#efe9db;border-radius:16px;padding:18px 20px;margin-top:28px;display:flex;align-items:flex-start;gap:12px}.note p{margin:0;color:#625f57;font-size:12px}
+.ai{position:fixed;right:24px;bottom:23px;border-radius:999px;background:#191a19;color:#fff;padding:14px 20px;border:0;box-shadow:0 8px 24px #0003;font-weight:800}.ai-dialog{position:fixed;right:24px;bottom:86px;width:min(380px,calc(100vw - 36px));background:white;border:1px solid var(--line);border-radius:20px;box-shadow:0 16px 50px #0002;padding:23px}.ai-dialog h3{margin:0 0 8px}.ai-dialog p{font-size:13px;color:var(--muted)}
+.btn{border:0;background:#191a19;color:white;padding:12px 18px;border-radius:10px;font-weight:700}.btn.secondary{background:#ebe8df;color:#222}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:20px}.login{max-width:450px;width:100%;background:white;border:1px solid var(--line);border-radius:24px;padding:36px}.login .brand{margin-bottom:32px}.login h1{font-size:26px}.field{margin:15px 0}.field label{display:block;font-weight:700;font-size:12px;margin-bottom:8px}.field input{width:100%;background:#faf9f6;border:1px solid #dfddd6;border-radius:10px;padding:13px 14px}.login .btn{width:100%;margin-top:12px}.error{color:#a42a2a;font-size:12px;min-height:18px}.role-line{font-size:12px;color:var(--muted)}.logout{border:0;background:none;color:var(--muted);text-decoration:underline;padding:7px}
+@media(max-width:960px){.shell{grid-template-columns:1fr}.side{padding:16px;gap:12px}.side .nav-title,.side-foot{display:none}nav{display:flex;overflow-x:auto}nav a{white-space:nowrap;font-size:12px;padding:9px}.main{padding:22px}.cards{grid-template-columns:repeat(2,1fr)}.hero-mark{display:none}}
+@media(max-width:580px){.cards{grid-template-columns:1fr}.top{align-items:flex-start}.hero{margin-top:25px}.user-pill{max-width:150px;overflow:hidden;text-overflow:ellipsis}.login{padding:25px}}
+</style>
+</head><body>
+<div id="loginView" class="login-wrap"><section class="login">
+<div class="brand"><img class="logo" src="https://fs-edtech.github.io/lesson-observation/assets/future-school-round.jpg" alt="Логотип школы"><div><strong>FUTURE SCHOOL</strong><small>INTERNAL PLATFORM</small></div></div>
+<h1>Единая школьная платформа</h1><p class="lead">Войдите под существующей учётной записью школы.</p>
+<form id="loginForm"><div class="field"><label for="username">Email или номер телефона</label><input id="username" required autocomplete="username" placeholder="Email или +7 7XX XXX XX XX"></div>
+<div class="field"><label for="password">Пароль</label><input id="password" type="password" required autocomplete="current-password" placeholder="Ваш пароль"></div>
+<div id="loginError" class="error" role="alert"></div><button class="btn" type="submit" id="loginBtn">Войти в систему</button></form>
+<p class="role-line">Используйте свой действующий логин от платформы обратной связи. Пароли не передаются в чат и не хранятся в интерфейсе.</p>
+</section></div>
+<div id="appView" class="shell hidden">
+<aside class="side">
+<div class="brand"><img class="logo" src="https://fs-edtech.github.io/lesson-observation/assets/future-school-round.jpg" alt="Логотип школы"><div><strong>FUTURE SCHOOL</strong><small>UNIFIED PLATFORM</small></div></div>
+<div><p class="nav-title">РАБОЧЕЕ ПРОСТРАНСТВО</p><nav><a class="active" href="#home"><span>▦</span>Главная</a><a href="https://fs-edtech.github.io/afs-feedback/"><span>▤</span>Обратная связь</a><a id="obsNav" href="https://fs-edtech.github.io/lesson-observation/"><span>◫</span>Наблюдения</a><a href="#nis"><span>▥</span>НИШ-аналитика</a><a href="#ai" id="aiNav"><span>✦</span>ИИ-помощник</a><a id="adminNav" class="hidden" href="https://fs-edtech.github.io/afs-feedback/access-admin.html"><span>⚙</span>Права доступа</a></nav></div>
+<div class="side-foot">Future School Platform<br>Внутренняя рабочая система школы</div>
+</aside>
+<main class="main">
+<div class="top"><div><b>Рабочее пространство школы</b><small>Astana Future School · 2026–2027</small></div><div class="user-pill"><span>●</span><span id="topName">Пользователь</span></div></div>
+<div class="hero"><div><div class="tag" id="roleTag">ЛИЧНЫЙ КАБИНЕТ</div><h1 id="greeting">Добро пожаловать!</h1><p class="lead">Ваши рабочие инструменты и школьная информация — в одном месте.</p></div><div class="hero-mark">✳</div></div>
+<div class="section-head"><h2>Разделы платформы</h2><small>Доступ определяется вашей ролью</small></div>
+<div class="cards">
+<a class="card" href="https://fs-edtech.github.io/afs-feedback/"><div class="glyph">▤</div><h3>Обратная связь</h3><p>Ученики, родители, публикации и панель аналитики. Использует действующие школьные данные.</p><div class="foot">ОТКРЫТЬ РАЗДЕЛ ↗</div></a>
+<a class="card" id="obsCard" href="https://fs-edtech.github.io/lesson-observation/"><div class="glyph">◫</div><h3>Наблюдение уроков</h3><p>Заполнение карт наблюдения и действующая аналитика администрации.</p><div class="foot">ОТКРЫТЬ РАЗДЕЛ ↗</div></a>
+<div class="card is-disabled" id="nis"><div class="glyph">▥</div><h3>НИШ-тестирование</h3><p>Расписание, загрузка заданий, попытки учеников и аналитика результатов.</p><div class="foot">ПОДКЛЮЧАЕМ</div></div>
+<a class="card hidden" id="adminCard" href="https://fs-edtech.github.io/afs-feedback/access-admin.html"><div class="glyph">⚙</div><h3>Роли и разрешения</h3><p>Управление доступами сотрудников, индивидуальными полномочиями и ролями.</p><div class="foot">ОТКРЫТЬ РЕДАКТОР ↗</div></a>
+<div class="card is-disabled"><div class="glyph">▧</div><h3>Аналитика школы</h3><p>Единый обзор показателей обратной связи и наблюдений уроков.</p><div class="foot">ПОДКЛЮЧАЕМ</div></div>
+<div class="card is-disabled"><div class="glyph">✦</div><h3>Future School AI</h3><p>Персональный помощник с учётом ролей и разрешённых школьных данных.</p><div class="foot">ПОДКЛЮЧАЕМ</div></div>
+</div>
+<div class="note"><strong>ℹ</strong><p>Это первая опубликованная оболочка единой платформы. Авторизация использует действующий Supabase. Разделы обратной связи и наблюдений пока открываются как существующие сайты; единый вход без повторной авторизации в наблюдения ещё не подключён. НИШ и ИИ находятся в разработке.</p></div>
+<button id="logoutBtn" class="logout" type="button">Выйти из учётной записи</button>
+</main></div>
+<button id="aiButton" class="ai hidden" type="button">✦ Future School AI</button>
+<div id="aiDialog" class="ai-dialog hidden" role="dialog" aria-label="Future School AI"><h3>Future School AI</h3><p>Помощник будет отвечать на вопросы по разрешённым школьным данным после подключения защищённых серверных инструментов. Сейчас ответы не генерируются.</p><button class="btn secondary" id="aiClose">Закрыть</button></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const URL='https://wvkcafxruzguifybeeab.supabase.co';
+const KEY='sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
+const client=window.supabase.createClient(URL,KEY);
+const $=id=>document.getElementById(id);
+function phone(raw){let d=raw.replace(/\D/g,'');if(/^8\d{10}$/.test(d))d='7'+d.slice(1);if(/^\d{10}$/.test(d))d='7'+d;return /^7\d{10}$/.test(d)?'+'+d:null}
+async function show(session){
+ $('loginView').classList.toggle('hidden',!!session);$('appView').classList.toggle('hidden',!session);$('aiButton').classList.toggle('hidden',!session);
+ if(!session)return;
+ try{
+ const uid=session.user.id;
+ const [p,r]=await Promise.all([client.from('profiles').select('full_name,is_active').eq('id',uid).maybeSingle(),client.from('user_roles').select('role').eq('user_id',uid)]);
+ if(p.error||r.error||!p.data?.is_active)throw Error('Не удалось подтвердить профиль и права доступа.');
+ const roles=(r.data||[]).map(x=>x.role);const superadmin=roles.includes('superadmin');
+ const display=p.data.full_name||'Пользователь';
+ $('greeting').textContent='Здравствуйте, '+display.split(' ')[0]+'!';
+ $('topName').textContent=display;
+ $('roleTag').textContent=roles.map(x=>({superadmin:'Суперадмин',director:'Директор',deputy:'Завуч',teacher:'Учитель',staff:'Сотрудник',parent:'Родитель',tutor:'Тьютор',student:'Ученик'}[x]||x)).join(' · ').toUpperCase()||'Пользователь';
+ $('adminCard').classList.toggle('hidden',!superadmin);$('adminNav').classList.toggle('hidden',!superadmin);
+ const obs=roles.some(x=>['superadmin','director','deputy','teacher','staff','tutor'].includes(x));
+ $('obsCard').classList.toggle('hidden',!obs);$('obsNav').classList.toggle('hidden',!obs);
+ }catch(e){$('loginError').textContent=e.message||'Ошибка доступа';await client.auth.signOut();$('appView').classList.add('hidden');$('loginView').classList.remove('hidden');$('aiButton').classList.add('hidden')}
+}
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('loginBtn');btn.disabled=true;$('loginError').textContent='';try{
+ const input=$('username').value.trim(), pw=$('password').value;
+ const ph=/^[+()\d\s-]{10,20}$/.test(input)?phone(input):null;
+ const credentials=ph?{phone:ph,password:pw}:{email:input,password:pw};
+ const {data,error}=await client.auth.signInWithPassword(credentials);
+ if(error)throw error;await show(data.session);
+ }catch(e){$('loginError').textContent=e.message||'Ошибка входа'}finally{btn.disabled=false}});
+$('logoutBtn').onclick=async()=>{await client.auth.signOut();await show(null)};
+$('aiButton').onclick=()=>$('aiDialog').classList.toggle('hidden');$('aiClose').onclick=()=>$('aiDialog').classList.add('hidden');$('aiNav').onclick=()=>{$('aiDialog').classList.remove('hidden')};
+client.auth.onAuthStateChange((_event,session)=>{if(!session)show(null)});
+client.auth.getSession().then(({data})=>show(data.session));
+</script></body></html>
