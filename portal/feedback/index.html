@@ -1222,6 +1222,141 @@ async function fsDownloadPdf(report,name,cls){
  }catch(e){alert('Не удалось сформировать PDF: '+e.message)}
 }
 
+function weeklyRenderComposer(){
+ const student=state.students.find(x=>x.id===state.selectedStudent),host=$('#composer');
+ if(!student){host.innerHTML='<div class="empty">Выберите ученика, чтобы открыть черновик предметной обратной связи.</div>';return}
+ const subjects=ownSubjects();
+ if(!subjects.length){host.innerHTML='<div class="empty">Для этого класса у вас не назначено предметов.</div>';return}
+ if(!fsWeekSelectedDate)fsWeekSelectedDate=fsMonday();
+ if(!subjects.some(s=>s.id===fsWeekSelectedSubject))fsWeekSelectedSubject=subjects[0].id;
+ host.innerHTML='<div class="compose"><div class="chead"><div><div class="t">'+esc(student.full_name)+'</div><div class="s">'+esc(state.classes.find(c=>c.id===student.class_id)?.name||'')+'</div></div></div>'+
+ '<div class="fs-week-grid"><label>Учебная неделя<select id="fs-draft-week">'+fsWeekOptions(fsWeekSelectedDate)+'</select></label><label>Предмет<select id="fs-draft-subject">'+subjects.map(x=>'<option value="'+x.id+'" '+(x.id===fsWeekSelectedSubject?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></label></div>'+
+ '<div class="layer bun top"><span class="lt">1 · Похвала — что освоено</span><textarea id="fs-draft-praise" placeholder="Успехи и достижения"></textarea></div>'+
+ '<div class="layer fill"><span class="lt">2 · Рекомендации — что повторить</span><textarea id="fs-draft-recs" placeholder="Затруднения и рекомендации"></textarea></div>'+
+ '<div class="layer bun bot"><span class="lt">3 · Поддержка</span><textarea id="fs-draft-support" placeholder="Следующие шаги и поддержка"></textarea></div>'+
+ '<div class="panel" style="margin:0"><h2>Работы ученика</h2><p class="note">Фотографии и документы будут прикрепляться к черновику. QR-фотографирование подключается отдельным этапом.</p><div class="fs-week-actions"><button class="btn ghost" id="fs-attach-device" type="button" disabled>Загрузить с устройства · скоро</button><button class="btn ghost" id="fs-attach-camera" type="button" disabled>Сфотографировать · скоро</button></div></div>'+
+ '<div class="fs-week-actions"><button id="fs-draft-preview" class="btn ghost" type="button">Предпросмотр</button><button id="fs-draft-save" class="btn ghost" type="button">Сохранить черновик</button><button id="fs-draft-submit" class="btn primary" type="button">Передать куратору</button></div><div id="fs-draft-notice" class="note" role="status">Загружаем черновик…</div></div>';
+ const key=student.id+'|'+fsWeekSelectedSubject+'|'+fsWeekSelectedDate;
+ fsWeekEditingKey=key;
+ let status='draft',loading=true,working=false;
+ const fields=()=>({p_praise:host.querySelector('#fs-draft-praise').value,p_recommendations:host.querySelector('#fs-draft-recs').value,p_support:host.querySelector('#fs-draft-support').value});
+ const notice=host.querySelector('#fs-draft-notice');
+ const base=()=>({p_student_id:student.id,p_subject_id:Number(fsWeekSelectedSubject),p_week_start:fsWeekSelectedDate});
+ const formValid=()=>!working&&status==='draft'&&fsWeekEditingKey===key;
+ const inputs=[host.querySelector('#fs-draft-praise'),host.querySelector('#fs-draft-recs'),host.querySelector('#fs-draft-support')];
+ const save=async(action='save')=>{
+  if(!formValid())return false;
+  clearTimeout(fsWeekDraftTimer);
+  working=true;notice.textContent=action==='save'?'Сохраняем черновик…':'Передаём куратору…';
+  try{
+   const data=await fsRpc('fs_weekly_work',{p_action:action,...base(),...fields()});
+   if(fsWeekEditingKey===key){
+    notice.textContent=action==='save'?'Черновик сохранён. Его можно продолжить на другом устройстве.':'Передано куратору. Черновик исчез из списка незавершённых.';
+    if(action==='submit'){status='submitted';inputs.forEach(x=>x.disabled=true);host.querySelector('#fs-draft-save').disabled=true;host.querySelector('#fs-draft-submit').disabled=true;}
+   }
+   return true;
+  }catch(e){if(fsWeekEditingKey===key)notice.textContent='Ошибка: '+e.message;return false}
+  finally{working=false}
+ };
+ const change=async(type,value)=>{clearTimeout(fsWeekDraftTimer);if(!loading&&status==='draft'){const success=await save();if(!success){notice.textContent+=' Измените выбор после успешного сохранения.';return;}}
+  if(type==='week')fsWeekSelectedDate=value;else fsWeekSelectedSubject=Number(value);weeklyRenderComposer();};
+ host.querySelector('#fs-draft-week').onchange=e=>change('week',e.target.value);
+ host.querySelector('#fs-draft-subject').onchange=e=>change('subject',e.target.value);
+ inputs.forEach(x=>x.oninput=()=>{if(loading||status!=='draft')return;notice.textContent='Есть несохранённые изменения…';clearTimeout(fsWeekDraftTimer);fsWeekDraftTimer=setTimeout(()=>save(),1800)});
+ host.querySelector('#fs-draft-save').onclick=()=>save();
+ host.querySelector('#fs-draft-preview').onclick=()=>{
+  const subj=subjects.find(s=>s.id===fsWeekSelectedSubject);
+  fsShowModal({week_start:fsWeekSelectedDate,sections:[{subject:subj.name,author:state.profile?.full_name||'Преподаватель',praise:fields().p_praise,recommendations:fields().p_recommendations,support:fields().p_support}],discipline:''},student.full_name,state.classes.find(c=>c.id===student.class_id)?.name||'');
+ };
+ host.querySelector('#fs-draft-submit').onclick=async()=>{
+  if(!confirm('Передать обратную связь куратору? После передачи этот черновик нельзя будет редактировать.'))return;
+  if(await save('submit')){host.querySelector('#fs-draft-preview').textContent='Просмотреть переданный отзыв';}
+ };
+ (async()=>{
+  try{
+   const entry=await fsRpc('fs_weekly_work',{p_action:'get',...base()});
+   if(fsWeekEditingKey!==key||!host.isConnected)return;
+   if(entry){inputs[0].value=entry.praise||'';inputs[1].value=entry.recommendations||'';inputs[2].value=entry.support||'';status=entry.status;if(status!=='draft'){inputs.forEach(x=>x.disabled=true);host.querySelector('#fs-draft-save').disabled=true;host.querySelector('#fs-draft-submit').disabled=true;notice.textContent='Обратная связь уже передана куратору. Выберите следующую учебную неделю.';}else notice.textContent='Черновик загружен. Изменения автоматически сохраняются.';}
+   else notice.textContent='Новый черновик. Текст автоматически сохраняется после ввода.';
+  }catch(e){notice.textContent='Не удалось загрузить: '+e.message;inputs.forEach(x=>x.disabled=true)}
+  finally{loading=false}
+ })();
+}
+
+function renderWeeklyCurator(){
+ const root=$('#v-weekly');if(!root)return;
+ const isAdmin=state.roles.some(r=>['superadmin','deputy','director'].includes(r));
+ const classes=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+ if(!classes.length){root.innerHTML='<div class="panel">Для вашего аккаунта не назначен класс кураторства.</div>';return}
+ if(!fsWeekSelectedDate)fsWeekSelectedDate=fsMonday();
+ if(!classes.some(c=>c.id===state.selectedClass))state.selectedClass=classes[0].id;
+ root.innerHTML='<div class="panel"><h2>Отправка родителям · единый недельный отчёт</h2><p class="note">Предметники передают отдельные отзывы сюда. Родитель получает один отчёт со всеми предметами после публикации куратором.</p><div class="fs-week-grid"><label>Класс<select id="fs-curator-class">'+classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.selectedClass?'selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select></label><label>Неделя<select id="fs-curator-week">'+fsWeekOptions(fsWeekSelectedDate)+'</select></label></div><div id="fs-curator-rows" class="note" style="margin-top:15px">Загружаем отзывы предметников…</div></div>';
+ root.querySelector('#fs-curator-class').onchange=e=>{state.selectedClass=Number(e.target.value);renderWeeklyCurator()};
+ root.querySelector('#fs-curator-week').onchange=e=>{fsWeekSelectedDate=e.target.value;renderWeeklyCurator()};
+ const className=classes.find(c=>c.id===state.selectedClass)?.name||'';
+ const selectedClass=state.selectedClass,selectedWeek=fsWeekSelectedDate;
+ (async()=>{
+  const box=root.querySelector('#fs-curator-rows');
+  try{
+   const students=await fsRpc('fs_weekly_dashboard',{p_class_id:selectedClass,p_week_start:selectedWeek});
+   if(!box.isConnected||state.tab!=='weekly'||selectedClass!==state.selectedClass||selectedWeek!==fsWeekSelectedDate)return;
+   box.className='';
+   box.innerHTML=(students||[]).map(st=>{
+    const received=st.sections?.length||0;
+    return '<details class="fs-week-row"><summary><b>'+esc(st.full_name)+'</b><span class="fs-week-count">'+received+'</span><span class="fs-week-status">'+(st.report_id?'Отправлено родителям':'Получено предметных отзывов')+'</span></summary>'+
+    '<div class="fs-week-subjects"><div class="note">'+(received?st.sections.map(s=>'<p>✓ '+esc(s.subject)+' · '+esc(s.author)+'</p>').join(''):'Ещё ни один предметник не передал отзыв.')+'</div>'+
+    (st.report_id?'<p class="note">Недельный отчёт опубликован; повторная отправка заблокирована.</p>':
+    '<label>Дисциплина и поведение · необязательно<textarea rows="3" data-discipline="'+st.id+'" placeholder="Факт → предпринятые меры → следующий шаг. Если замечаний нет, оставьте пустым."></textarea></label>')+
+    '<div class="fs-week-actions"><button type="button" class="btn ghost" data-preview="'+st.id+'" '+(!received?'disabled':'')+'>Предпросмотр</button>'+
+    (!st.report_id?'<button class="btn primary" type="button" data-publish="'+st.id+'" '+(!received?'disabled':'')+'>Опубликовать родителям</button>':'')+'</div><div class="note" data-status="'+st.id+'"></div></div></details>';
+   }).join('')||'<div class="empty">Учеников нет.</div>';
+   for(const st of students||[]){
+    const preview=box.querySelector('[data-preview="'+st.id+'"]');
+    if(preview)preview.onclick=()=>fsShowModal({week_start:selectedWeek,sections:st.sections,discipline:box.querySelector('[data-discipline="'+st.id+'"]')?.value||''},st.full_name,className);
+    const publish=box.querySelector('[data-publish="'+st.id+'"]');
+    if(publish)publish.onclick=async()=>{
+     const text=box.querySelector('[data-discipline="'+st.id+'"]')?.value||'';
+     if(!confirm('Опубликовать единый недельный отчёт для '+st.full_name+'? После отправки документ будет доступен родителям.'))return;
+     publish.disabled=true;
+     const output=box.querySelector('[data-status="'+st.id+'"]');
+     const params={p_student_id:st.id,p_week_start:selectedWeek,p_discipline:text,p_confirm_partial:false};
+     try{
+      await fsRpc('fs_weekly_publish',params);renderWeeklyCurator();
+     }catch(e){
+      if(e.message.includes('Неполный пакет')&&confirm(e.message+'\n\nВсё равно отправить?')){
+       try{await fsRpc('fs_weekly_publish',{...params,p_confirm_partial:true});renderWeeklyCurator();return}catch(e2){output.textContent='Ошибка: '+e2.message}
+      }else output.textContent='Ошибка: '+e.message;
+      publish.disabled=false;
+     }
+    };
+   }
+  }catch(e){if(box.isConnected)box.innerHTML='<div class="toast bad">Ошибка загрузки: '+esc(e.message)+'</div>'}
+ })();
+}
+
+async function weeklyRenderParent(){
+ const root=$('#v-parent');root.innerHTML='<div class="panel">Загружаем единые недельные отчёты…</div>';
+ if(!state.roles.includes('parent')){root.textContent='Нет доступа';return}
+ try{
+  const reports=await fsRpc('fs_weekly_parent_reports');
+  if(state.tab!=='parent')return;
+  const ids=[...new Set((reports||[]).map(r=>r.student_id))];
+  if(!ids.length){root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Пока нет опубликованных единых недельных отчётов. Они появятся здесь после отправки куратором.</p></div>';return}
+  if(!ids.includes(fsParentChildId))fsParentChildId=ids[0];
+  const kids=ids.map(id=>reports.find(r=>r.student_id===id));
+  root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Выберите ребёнка и учебную неделю. Каждый документ объединяет все предметы.</p><div class="fs-week-student-switch">'+kids.map(k=>'<button class="btn '+(k.student_id===fsParentChildId?'primary':'ghost')+'" data-child="'+k.student_id+'">'+esc(k.student_name)+' · '+esc(k.class_name)+'</button>').join('')+'</div><div id="fs-parent-reports"></div></div>';
+  root.querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>{fsParentChildId=Number(b.dataset.child);weeklyRenderParent()});
+  const list=reports.filter(r=>r.student_id===fsParentChildId);
+  const host=root.querySelector('#fs-parent-reports');
+  host.innerHTML=list.map(r=>'<div class="fs-week-row" style="padding:14px"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div><div class="note">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join('');
+  for(const r of list){
+   const view=host.querySelector('[data-parent-view="'+r.id+'"]');view.onclick=async()=>{try{await fsRpc('fs_weekly_receipt',{p_report_id:r.id,p_action:'open'});r.opened_at=r.opened_at||new Date().toISOString()}catch(e){alert('Просмотр не зафиксирован: '+e.message)}
+    fsShowModal(r,r.student_name,r.class_name,{ack:true,acknowledged:!!r.acknowledged_at})};
+   host.querySelector('[data-parent-download="'+r.id+'"]').onclick=()=>fsDownloadPdf(r,r.student_name,r.class_name);
+  }
+ }catch(e){root.innerHTML='<div class="toast bad">Не удалось загрузить отчёты: '+esc(e.message)+'</div>'}
+}
+
 const {data:{session},error}=await supabase.auth.getSession();
 if(error)$('#login-error').textContent=msg(error);
 if(settingInvitationPassword){
