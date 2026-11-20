@@ -1195,7 +1195,7 @@ const parts=Array.isArray(report.sections)?report.sections:[];
 return '<article class="fs-week-paper" id="fs-report-sheet"><div style="font-weight:700;font-size:13px;letter-spacing:1px">ASTANA FUTURE SCHOOL</div><div style="font-size:11px;color:#607084">2026–2027 учебный год</div><h2>Индивидуальная обратная связь</h2><p><b>'+esc(fsWeekLabel(report.week_start))+'</b></p><p><b>Ученик:</b> '+esc(studentName)+'<br><b>Класс:</b> '+esc(className)+'</p><h3 id="fs-report-toc">Содержание</h3><div class="fs-toc">'+parts.map((p,i)=>'<p><a href="#fs-section-'+i+'">'+esc(p.subject)+'</a></p>').join('')+(report.discipline?.trim()?'<p><a href="#fs-discipline">❕ Дисциплина и поведение</a></p>':'')+'</div>'+parts.map((p,i)=>'<section class="fs-section" id="fs-section-'+i+'"><h3>'+esc(p.subject)+'</h3><p style="font-size:12px;color:#607084">Преподаватель: '+esc(p.author)+'</p><div class="fs-field"><b>Достижения и успехи</b><p>'+esc(p.praise)+'</p></div><div class="fs-field"><b>На что обратить внимание</b><p>'+esc(p.recommendations)+'</p></div><div class="fs-field"><b>Поддержка и следующий шаг</b><p>'+esc(p.support)+'</p></div><a href="#fs-report-toc">Вернуться к содержанию</a></section>').join('')+(report.discipline?.trim()?'<section class="fs-section" id="fs-discipline"><h3>Дисциплина и поведение</h3><div class="fs-field">'+esc(report.discipline)+'</div><a href="#fs-report-toc">Вернуться к содержанию</a></section>':'')+'<p style="font-size:11px;color:#607084;margin-top:30px">Сформировано Future School Platform. Индивидуальная информация ученика.</p></article>';
 }
 function fsShowModal(report,name,cls,options={}){
- const modal=$('#fs-week-modal');$('#fs-week-document').innerHTML=fsHtmlDoc(report,name,cls);
+ const modal=$('#fs-week-modal');$('#fs-week-document').innerHTML=fsHtmlDoc(report,name,cls);fsEnrichPreview(report).catch(e=>console.warn('Вложения: ',e));
  const bar=$('#fs-week-modal-actions');bar.replaceChildren();
  const pdf=document.createElement('button');pdf.className='btn ghost';pdf.textContent='Скачать PDF';pdf.onclick=()=>fsDownloadPdf(report,name,cls);bar.append(pdf);
  if(options.ack){const ack=document.createElement('button');ack.className='btn primary';ack.textContent=options.acknowledged?'Ознакомление подтверждено':'Я ознакомился(-ась)';ack.disabled=!!options.acknowledged;ack.onclick=async()=>{ack.disabled=true;try{await fsRpc('fs_weekly_receipt',{p_report_id:report.id,p_action:'acknowledge'});ack.textContent='Ознакомление подтверждено';}catch(e){ack.disabled=false;alert(e.message)}};bar.append(ack)}
@@ -1473,6 +1473,73 @@ async function fsHandleCaptureLink(){
  camera.onchange=async()=>{const files=Array.from(camera.files||[]);if(files.length)await fsWeeklyUploadFiles(entry.entry_id,files,note);camera.value=''};
 }
 
+async function fsDownloadPdfEnhanced(report,name,cls){
+ const load=async url=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.append(s)});
+ try{
+  if(!window.pdfMake){await load('https://cdn.jsdelivr.net/npm/pdfmake@0.2.20/build/pdfmake.min.js');await load('https://cdn.jsdelivr.net/npm/pdfmake@0.2.20/build/vfs_fonts.js')}
+  const sections=Array.isArray(report.sections)?report.sections:[];
+  const content=[
+   {text:'ASTANA FUTURE SCHOOL',style:'brand'},
+   {text:'ИНДИВИДУАЛЬНАЯ ОБРАТНАЯ СВЯЗЬ',style:'title'},
+   {text:fsWeekLabel(report.week_start),margin:[0,0,0,12]},
+   {text:'Ученик: '+name+'    Класс: '+cls,margin:[0,0,0,20]},
+   {toc:{title:{text:'Содержание',style:'heading'}},pageBreak:'after'}
+  ];
+  const asDataURL=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob)});
+  for(const section of sections){
+   content.push({text:section.subject,style:'heading',tocItem:true,id:'subject-'+section.subject,pageBreak:'before'});
+   content.push({text:'Преподаватель: '+section.author,color:'#606c80',fontSize:10,margin:[0,3,0,12]});
+   for(const [title,value] of [['Достижения и успехи',section.praise],['На что обратить внимание',section.recommendations],['Поддержка и следующий шаг',section.support]]){
+    content.push({text:title,bold:true,margin:[0,11,0,4]},{text:value||'—',margin:[0,0,0,7]});
+   }
+   const files=section.files||[];
+   if(files.length)content.push({text:'Работы ученика',bold:true,margin:[0,16,0,6]});
+   for(const file of files){
+    if(file.mime?.startsWith('image/')){
+     const {data,error}=await supabase.storage.from('fs-weekly-files').download(file.path);
+     if(error||!data){content.push({text:'Вложение: '+file.name+' (недоступно для включения)',color:'#6d7688',fontSize:9});continue}
+     let blob=data;
+     if(blob.type!=='image/jpeg'&&blob.type!=='image/png'){
+      const tmp=URL.createObjectURL(blob);
+      try{const image=await new Promise((yes,no)=>{const im=new Image();im.onload=()=>yes(im);im.onerror=no;im.src=tmp});const can=document.createElement('canvas');can.width=image.naturalWidth;can.height=image.naturalHeight;can.getContext('2d').drawImage(image,0,0);blob=await new Promise(y=>can.toBlob(y,'image/jpeg',.85))}finally{URL.revokeObjectURL(tmp)}
+     }
+     content.push({text:file.name,fontSize:9,color:'#6d7688',margin:[0,8,0,5]},{image:await asDataURL(blob),fit:[480,580],margin:[0,0,0,15]});
+    }else{
+     content.push({text:'PDF-вложение: '+file.name+' (доступно в личном кабинете)',fontSize:10,color:'#606c80',margin:[0,6,0,8]});
+    }
+   }
+  }
+  if(report.discipline?.trim())content.push({text:'! Дисциплина и поведение',style:'heading',tocItem:true,pageBreak:'before'},{text:report.discipline,margin:[0,14,0,8]});
+  const dd={info:{title:'Обратная связь — '+name},content,styles:{brand:{fontSize:12,bold:true,color:'#1F3A5F',margin:[0,0,0,24]},title:{fontSize:21,bold:true,margin:[0,0,0,8]},heading:{fontSize:16,bold:true,color:'#1F3A5F',margin:[0,6,0,10]}},defaultStyle:{fontSize:11,lineHeight:1.25},pageMargins:[46,46,46,52],footer:(current,total)=>({text:current+' / '+total,alignment:'center',fontSize:9,color:'#8a94a4'})};
+  window.pdfMake.createPdf(dd).download('AFS_Обратная_связь_'+report.week_start+'_'+name.replace(/\s+/g,'_')+'.pdf');
+ }catch(e){alert('Не удалось сформировать PDF: '+e.message)}
+}
+
+async function fsEnrichPreview(report){
+ const parts=Array.isArray(report.sections)?report.sections:[];
+ for(let i=0;i<parts.length;i++){
+  const sec=$('#fs-section-'+i);if(!sec)continue;
+  const files=parts[i].files||[];if(!files.length)continue;
+  const host=document.createElement('div');host.style.margin='14px 0';
+  const heading=document.createElement('h4');heading.textContent='Прикреплённые работы ученика';host.append(heading);
+  sec.insertBefore(host,sec.querySelector('a[href="#fs-report-toc"]'));
+  for(const f of files){
+   const wrap=document.createElement('div');wrap.style.margin='10px 0';
+   const link=document.createElement('a');link.href='#';link.textContent='📎 '+f.name;wrap.append(link);
+   host.append(wrap);
+   try{
+    const {data,error}=await supabase.storage.from('fs-weekly-files').createSignedUrl(f.path,300);
+    if(error)throw error;
+    link.href=data.signedUrl;link.target='_blank';link.rel='noopener noreferrer';
+    if(f.mime?.startsWith('image/')){
+     const img=document.createElement('img');img.src=data.signedUrl;img.alt='Работа ученика: '+f.name;img.loading='lazy';img.style.cssText='max-width:100%;max-height:620px;display:block;object-fit:contain;border-radius:8px;margin:8px 0';wrap.append(img);
+    }
+   }catch(e){link.textContent+=' · недоступно: '+e.message;link.removeAttribute('href')}
+  }
+ }
+}
+
+fsDownloadPdf=fsDownloadPdfEnhanced;
 const {data:{session},error}=await supabase.auth.getSession();
 if(error)$('#login-error').textContent=msg(error);
 if(settingInvitationPassword){
