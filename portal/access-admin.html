@@ -35,7 +35,7 @@ select.scope{width:165px;padding:9px;font-size:12px}
 <header class="top"><div class="brand"><img src="https://fs-edtech.github.io/lesson-observation/assets/future-school-round.jpg" alt="Future School"><div><strong>FUTURE SCHOOL</strong><small>ADMIN WORKSPACE</small></div></div><a class="back" href="/">← Главная платформа</a></header>
 <div class="head"><span class="tag">АДМИНИСТРИРОВАНИЕ</span><h1>Роли и права доступа</h1><p>Кто и что может делать в единой школьной системе. Настройки сохраняются только с разрешения суперадминистратора.</p></div>
 <section class="panel" style="margin-bottom:18px" id="pendingBox"><div class="sectionTitle"><h2>Руководители для подключения</h2><span class="tag">ПРОВЕРКА АККАУНТОВ</span></div>
-<p>Найдены в ранее созданных школьных системах, но у них пока нет подтверждённого единого аккаунта. Назначение прав будет доступно после сопоставления личности и логина.</p><div id="pendingStaff" style="margin-top:14px">Загрузка реестра…</div></section>
+<p>Создайте каждому подтверждённому руководителю служебный логин AFS26. После создания он появится в списке сотрудников, где можно назначить роли. Родительская связь, если есть, будет сохранена.</p><div id="pendingStaff" style="margin-top:14px">Загрузка реестра…</div></section>
 <div class="layout">
 <aside class="panel"><h2>Сотрудники</h2><label class="field"><b>Найти по ФИО или логину</b><input type="search" id="search" placeholder="Например, фамилия учителя"></label><div id="count" class="sidehint">Загружаем список…</div><div id="list"></div><p class="sidehint">Родительские аккаунты не изменяются в этой карточке. Они управляются через проверенную привязку к детям.</p></aside>
 <section class="panel"><div id="editor" class="empty">Выберите сотрудника в списке слева.</div><div id="status" role="status" aria-live="polite"></div></section>
@@ -74,7 +74,7 @@ select.scope{width:165px;padding:9px;font-size:12px}
   try{
    const {data:{user},error}=await db.auth.getUser();
    if(error||!user)throw Error('Нужно войти под суперадмином на главной странице.');
-   const {data:pending,error:pendingError}=await db.from('fs_staff_onboarding').select('full_name,expected_roles,campus,status,source_name,notes').order('full_name');
+   const {data:pending,error:pendingError}=await db.from('fs_staff_onboarding').select('id,full_name,expected_roles,campus,status,source_name,notes,linked_user_id').order('full_name');
    const stage=$('pendingStaff');stage.replaceChildren();
    if(pendingError){stage.append(node('p','Не удалось получить список для сверки: '+pendingError.message))}
    else if(!pending?.length)stage.append(node('p','Нет сотрудников, ожидающих подключения'));
@@ -83,7 +83,45 @@ select.scope{width:165px;padding:9px;font-size:12px}
     person.append(node('b',candidate.full_name),
        node('small','Предполагаемые роли: '+candidate.expected_roles.map(r=>roleNames[r]||r).join(' · ')),
        node('small',candidate.notes||'Требуется идентификация'));
-    row.append(person,node('span','Не подключён','tag'));stage.append(row);
+    const controls=node('div',undefined,'right');
+    if(candidate.linked_user_id){controls.append(node('span','Подключён','tag'))}
+    else{
+     const btn=node('button','Создать аккаунт','tag dark');
+     btn.onclick=async()=>{
+      if(!confirm('Создать служебный аккаунт для '+candidate.full_name+'? После создания назначьте необходимые роли в карточке сотрудника.'))return;
+      btn.disabled=true;btn.textContent='Создаём…';status('Создаём аккаунт '+candidate.full_name+'…');
+      try{
+       const assignments={'Нурсейтов Ильяс Болатович':87,'Абедчанова Гульсара Мурзабаевна':88,
+        'Васева Ирина Николаевна':89,'Есенбаева Жанар Сабыржановна':90,
+        'Ерниязова Жупат Ораловна':91,'Исбекова Бакыт Ауезовна':92};
+       const number=assignments[candidate.full_name];
+       if(!number)throw Error('Служебный номер не определён');
+       const login='afs26.'+String(number).padStart(3,'0')+'@example.com';
+       const {data:directory,error:de}=await db.rpc('afs_staff_directory');
+       if(de)throw de;
+       let user=directory?.find(p=>p.full_name===candidate.full_name);
+       if(user&&user.email?.toLowerCase()!==login)throw Error('ФИО найдено с другим логином. Требуется ручная сверка.');
+       if(!user){
+        const {data:{session}}=await db.auth.getSession();
+        if(!session?.access_token)throw Error('Повторно войдите в систему');
+        const response=await fetch('https://wvkcafxruzguifybeeab.supabase.co/functions/v1/manage-staff',{
+         method:'POST',headers:{'Content-Type':'application/json',apikey:'sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-',Authorization:'Bearer '+session.access_token},
+         body:JSON.stringify({full_name:candidate.full_name,email:login,role:'teacher'})
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok||!result.user_id)throw Error(result.message||('Ошибка создания: HTTP '+response.status));
+        user={id:result.user_id,full_name:candidate.full_name,email:login};
+       }
+       await rpc('fs_admin_bind_onboarding',{p_onboarding_id:candidate.id,p_user_id:user.id});
+       status('Аккаунт '+login+' создан. Откройте карточку сотрудника ниже и назначьте директорскую / завучскую роль. Пароль можно выдать в разделе обратной связи.','ok');
+       people=await rpc('afs_staff_directory',{});people.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
+       $('search').value=candidate.full_name;activeId=user.id;list();await render(user.id);
+       btn.textContent='Подключён';btn.disabled=true;
+      }catch(e){status('Ошибка: '+e.message,'err');btn.disabled=false;btn.textContent='Повторить подключение'}
+     };
+     controls.append(btn);
+    }
+    row.append(person,controls);stage.append(row);
    }
    const data=await rpc('afs_staff_directory',{});
    people=Array.isArray(data)?data:[];
