@@ -389,8 +389,10 @@ async function loadData(){
   $('#tab-panel').hidden=!canPanel;
   $('#tab-weekly').hidden=!(isAdmin||state.roles.includes('tutor')||hasHomeroom);
   if(state.tab==='panel'&&!canPanel)state.tab='send';
-  if(state.tab==='class'||(state.tab==='roster'&&!isAdmin))state.tab='panel';
-  for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
+  if(state.tab==='class'||state.tab==='roster')state.tab=isAdmin?'manage':(canPanel?'panel':'send');
+  $('#tab-send').hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
+  $('#tab-roster').hidden=true;
+  $('#tab-panel').hidden=!canPanel;
   if(!isAdmin && state.tab==='manage')state.tab='send';
   for(const section of ['send','panel','class','roster','manage','parent','weekly']){
     $('#v-'+section).hidden=section!==state.tab;
@@ -1267,6 +1269,12 @@ async function renderManage(){
     $('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;
   }
   const root=$('#v-manage');
+  const studentsSection=$('#v-roster');
+  // Preserve the real student editor when replacing Management's markup.
+  if(studentsSection&&root.contains(studentsSection)){
+    root.parentElement.append(studentsSection);
+    studentsSection.hidden=true;
+  }
   root.innerHTML='<div class="panel"><h2>Управление школой</h2><p class="note">Загружаем преподавателей, классы и предметы…</p></div>';
   let d;
   try{d=await refreshManageData()}catch(e){root.innerHTML=`<div class="toast bad">Ошибка загрузки управления: ${esc(msg(e))}. Сначала выполните SQL №21.</div>`;return;}
