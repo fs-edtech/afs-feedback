@@ -1451,8 +1451,8 @@ async function fsPushMount(){
   const registration=await navigator.serviceWorker.register('/feedback/sw.js',{scope:'/feedback/'});
   if(!box.isConnected)return;
   const current=await registration.pushManager.getSubscription();
-  const known=await fsRpc('fs_parent_push_manage',{p_action:'status'});
-  const enabled=!!current && Number(known?.enabled_devices||0)>0 && Notification.permission==='granted';
+  const known=await fsRpc('fs_parent_push_manage',{p_action:'status',p_endpoint:current?.endpoint||null});
+  const enabled=!!current && known?.this_device_enabled===true && Notification.permission==='granted';
   button.disabled=false;button.textContent=enabled?'Отключить уведомления':'Включить уведомления';
   status.textContent=enabled?'Уведомления включены на этом устройстве.':'Вы сами решаете, разрешать ли уведомления на этом устройстве.';
   button.onclick=async()=>{
