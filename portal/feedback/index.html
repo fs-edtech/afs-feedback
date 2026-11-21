@@ -232,6 +232,22 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-push-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .fs-push-note{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
 .fs-push-button{white-space:nowrap}
+/* Manage accordions: collapsed by default, preserving existing forms */
+.fs-manage-accordion{display:block;margin:12px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.fs-manage-accordion>summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none;padding:16px 18px;font-weight:700;font-size:15px;line-height:1.45}
+.fs-manage-accordion>summary::-webkit-details-marker{display:none}
+.fs-manage-accordion>summary::before{content:'▸';color:var(--muted);font-size:17px}
+.fs-manage-accordion[open]>summary::before{content:'▾'}
+.fs-manage-accordion[open]>summary{border-bottom:1px solid var(--line)}
+.fs-manage-accordion>.panel,.fs-manage-accordion>.fs-roster-inner{margin:0!important;border:0!important;box-shadow:none!important;border-radius:0!important}
+.fs-manage-accordion>.panel>h2:first-child,.fs-manage-accordion>.panel>.afs-staff-header>div>h2:first-child{display:none}
+.fs-manage-accordion>.panel{padding:16px!important}
+.fs-manage-group{display:block!important;margin:0!important}
+.fs-manage-accordion>.fs-roster-inner{padding:0 12px 14px}
+.fs-manage-accordion>.fs-roster-inner .panel{margin:10px 0}
+.fs-week-subjects>.fs-week-actions{margin-top:22px!important;padding-top:14px!important;border-top:1px solid var(--line);clear:both}
+.fs-week-subjects>label{display:block;margin:14px 0}
+@media(max-width:640px){.fs-manage-accordion>summary{padding:14px 12px}.fs-week-subjects>.fs-week-actions{gap:10px}}
 </style>
 
 <header><div class="wrap hrow">
@@ -241,9 +257,9 @@ header{box-shadow:0 2px 16px #00000005}
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
     <button role="tab" id="tab-class" data-tab="class" aria-selected="false" hidden>Мой класс</button><button role="tab" id="tab-weekly" data-tab="weekly" aria-selected="false" hidden>Отправка родителям</button>
-    <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false">Ученики</button>
+    <button role="tab" id="tab-roster" data-tab="roster" aria-selected="false" hidden>Ученики</button>
     <button role="tab" id="tab-parent" data-tab="parent" aria-selected="false" hidden>Мои дети</button>
-    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Сотрудники и управление</button>
+    <button role="tab" id="tab-manage" data-tab="manage" aria-selected="false" hidden>Управление</button>
   </nav>
 </div></header>
 
@@ -367,8 +383,12 @@ async function loadData(){
   $('#tab-manage').hidden=!isAdmin;
   // For teachers, only Send + Panel. Admin roster remains for student import.
   $('#tab-class').hidden=true;
-  $('#tab-weekly').hidden=!(isAdmin||state.roles.includes('director')||state.roles.includes('tutor')||state.assignments.some(a=>a.assignment_type==='homeroom'));
-  $('#tab-roster').hidden=!isAdmin;
+  $('#tab-roster').hidden=true;
+  const hasHomeroom=state.assignments.some(a=>a.assignment_type==='homeroom');
+  const canPanel=isAdmin||state.roles.includes('director')||state.roles.includes('tutor')||hasHomeroom;
+  $('#tab-panel').hidden=!canPanel;
+  $('#tab-weekly').hidden=!(isAdmin||state.roles.includes('tutor')||hasHomeroom);
+  if(state.tab==='panel'&&!canPanel)state.tab='send';
   if(state.tab==='class'||(state.tab==='roster'&&!isAdmin))state.tab='panel';
   for(const section of ['send','panel','roster'])$('#tab-'+section).hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
   if(!isAdmin && state.tab==='manage')state.tab='send';
@@ -430,7 +450,7 @@ $('#change-password-form').onsubmit=async e=>{
 };
 
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
-function pickTab(tab){if(tab==='weekly'&&$('#tab-weekly').hidden)return;if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent','weekly']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
+function pickTab(tab){if(tab==='roster'||(tab==='panel'&&$('#tab-panel').hidden))return;if(tab==='weekly'&&$('#tab-weekly').hidden)return;if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent','weekly']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
 function render(){if(state.tab==='weekly'){renderWeeklyCurator()}else if(state.tab==='send'){renderList();renderComposer()}else if(state.tab==='panel'){renderPanel()}else if(state.tab==='roster'){renderRoster()}else if(state.tab==='class'){renderMyClass()}else if(state.tab==='parent'){renderParent()}else{renderManage()}}
 function renderList(){
@@ -1207,6 +1227,41 @@ async function refreshManageData(){
   if(error)throw error;
   return {staff:staff||[],classes:classes||[],subjects:subjects||[],assignments:assignments||[]};
 }
+function fsMakeManageAccordion(panel,title,extraClass=''){
+ if(!panel||panel.parentElement?.classList.contains('fs-manage-accordion'))return null;
+ const details=document.createElement('details');
+ details.className='fs-manage-accordion '+extraClass;
+ const summary=document.createElement('summary');summary.textContent=title;details.append(summary);
+ panel.replaceWith(details);details.append(panel);
+ return details;
+}
+function fsCollapseManagement(root){
+ const formGroup=root.querySelector('.forms');
+ if(formGroup){
+  formGroup.classList.add('fs-manage-group');
+  const titles=['Добавить преподавателя','Назначить нагрузку','Создать класс','Создать предмет'];
+  [...formGroup.children].filter(n=>n.classList.contains('panel')).forEach((panel,i)=>fsMakeManageAccordion(panel,titles[i]||panel.querySelector('h2')?.textContent||'Настройка'));
+ }
+ const parentPanel=root.querySelector('#manage-parent-grid')?.closest('.panel');
+ fsMakeManageAccordion(parentPanel,'Родители · управление классом');
+ const staffPanel=root.querySelector('#afs-staff-search')?.closest('.panel');
+ fsMakeManageAccordion(staffPanel,'Сотрудники и назначения');
+ const rolePanel=[...root.querySelectorAll('.panel')].find(p=>p.querySelector('a[href="/access-admin.html"]'));
+ fsMakeManageAccordion(rolePanel,'Права доступа Future School');
+ const roster=document.querySelector('#v-roster');
+ if(roster){
+  const details=document.createElement('details');
+  details.className='fs-manage-accordion';
+  const summary=document.createElement('summary');summary.textContent='Ученики ('+state.students.length+')';
+  details.append(summary);
+  root.append(details);
+  roster.hidden=false;
+  roster.classList.add('fs-roster-inner');
+  details.append(roster);
+  // Preserve student editor, CSV/Excel import and their existing handlers.
+  renderRoster();
+ }
+}
 async function renderManage(){
   if(!state.roles.some(r=>r==='superadmin'||r==='deputy')){
     $('#v-manage').innerHTML='<div class="empty">Доступ ограничен.</div>';return;
@@ -1265,6 +1320,7 @@ async function renderManage(){
     <td>${state.roles.includes('superadmin')?`<button type="button" class="afs-staff-pencil" data-staff-edit="${esc(x.id)}" title="Редактировать сотрудника" aria-label="Редактировать сотрудника">${afsPencilSvg}</button>`:''}</td></tr>`).join('')}</tbody></table></div></div>
     ${state.roles.includes('superadmin')?'<div class="panel" style="margin:14px 0"><h2>Права доступа Future School</h2><p class="note">Настройте роли, разрешения и индивидуальные права сотрудников в едином редакторе.</p><a class="btn ghost" href="/access-admin.html">Открыть управление ролями</a></div>':''}
     <dialog id="afs-staff-dialog" class="afs-staff-dialog"><form method="dialog"><button class="afs-dialog-close" aria-label="Закрыть">×</button></form><h2>Редактировать сотрудника</h2><div id="afs-staff-dialog-body"></div></dialog>`;
+  fsCollapseManagement(root);
   const classPicker=$('#manage-parent-class');
   const showParentsForClass=async()=>{
     const root=$('#manage-parent-grid');root.replaceChildren();
