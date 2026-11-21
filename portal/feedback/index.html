@@ -734,9 +734,56 @@ async function renderClassParentEditorReload(classId,root,oldHost){
   if(root.isConnected&&(state.tab==='class'||state.tab==='manage'||state.tab==='panel'))await renderClassParentEditor(classId,root);
 }
 // AFS #37: compact teacher Panel. No changes to Send or administrative Manage.
+async function fsRenderPushAdmin(panelRoot,classId,isAdmin){
+ const container=panelRoot.querySelector('#afs-push-overview');
+ if(!container)return;
+ container.innerHTML='<h2>🔔 Push-уведомления родителей</h2>'+
+ '<p class="note">Подписка означает, что хотя бы одно устройство родителя разрешило уведомления. «Принято push-сервисом» не означает, что человек увидел сообщение — ознакомление проверяется отдельно.</p>'+
+ '<div class="fs-week-actions"><label style="min-width:180px">Отчёт по классу<select id="fs-push-scope">'+
+ (isAdmin?'<option value="all">Все классы</option>':'')+
+ '<option value="class">Текущий класс</option></select></label>'+
+ '<button class="btn ghost" type="button" id="fs-push-refresh">Обновить</button></div>'+
+ '<div id="fs-push-admin-body" class="note" aria-live="polite">Загружаем сведения…</div>';
+ const scope=container.querySelector('#fs-push-scope');
+ if(isAdmin)scope.value='all';
+ const refresh=async()=>{
+  const body=container.querySelector('#fs-push-admin-body');
+  body.innerHTML='<p class="note">Обновляем статистику…</p>';
+  const scopeId=scope.value==='all'?null:classId;
+  try{
+   const data=await fsRpc('fs_parent_push_admin_overview',{p_class_id:scopeId});
+   if(!body.isConnected||state.panelClass!==classId)return;
+   const rows=Array.isArray(data?.rows)?data.rows:[];
+   const parentLinks=rows.length,subscriptions=rows.filter(r=>Number(r.active_devices)>0).length;
+   const accepted=rows.reduce((v,r)=>v+Number(r.accepted_pushes||0),0);
+   const acknowledged=rows.reduce((v,r)=>v+Number(r.acknowledged_reports||0),0);
+   body.innerHTML='<div class="tiles" style="margin:10px 0">'+
+    '<div class="tile"><div class="k">Родительских связей</div><div class="v">'+parentLinks+'</div></div>'+
+    '<div class="tile"><div class="k">Подключили push</div><div class="v">'+subscriptions+'</div><div class="h">Родителей с разрешёнными устройствами</div></div>'+
+    '<div class="tile"><div class="k">Принято push-сервисами</div><div class="v">'+accepted+'</div><div class="h">Зафиксированные приёмы запросов, не прочтения</div></div>'+
+    '<div class="tile"><div class="k">Ознакомлений</div><div class="v">'+acknowledged+'</div><div class="h">Подтверждения родителей по отчётам</div></div></div>'+
+    '<div class="tw"><table><thead><tr><th>Класс / ребёнок</th><th>Родитель</th><th>Подписка</th><th>Push</th><th>Ознакомлено</th></tr></thead><tbody>'+
+    rows.map(r=>{
+      const devices=Number(r.active_devices||0),sent=Number(r.accepted_pushes||0),failed=Number(r.failed_pushes||0);
+      const stateText=!r.has_account?'Нет доступа к кабинету':devices?'Подключено · '+devices+' устр.':'Не подключено';
+      const sendText=sent?'Принято сервисом: '+sent+(failed?' · ошибок: '+failed:''):failed?'Ошибок отправки: '+failed:'Не отправлялось / нет данных';
+      return '<tr><td><b>'+esc(r.student_name)+'</b><div class="note">'+esc(r.class_name)+'</div></td>'+
+        '<td>'+esc(r.parent_name)+'</td>'+
+        '<td><span class="pill '+(devices?'ok':'')+'">'+esc(stateText)+'</span></td>'+
+        '<td><span class="note">'+esc(sendText)+'</span></td>'+
+        '<td>'+Number(r.acknowledged_reports)+' из '+Number(r.published_reports)+'</td></tr>';
+    }).join('')+'</tbody></table></div>'+
+    (rows.length?'':'<p class="note">Для выбранной области нет привязанных родителей.</p>')+
+    '<p class="note" style="margin-top:10px">Статистика обновляется по кнопке. Статус подписки определяется по записи платформы; если устройство перестало принимать push, запись обновится после ошибки службы доставки.</p>';
+  }catch(error){if(body.isConnected)body.innerHTML='<div class="toast bad">Не удалось загрузить статистику push: '+esc(error.message||String(error))+'</div>'}
+ };
+ scope.onchange=refresh;
+ container.querySelector('#fs-push-refresh').onclick=refresh;
+ await refresh();
+}
 function renderPanel(){
   const root=$('#v-panel');
-  const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
+  const isAdmin=state.roles.some(r=>['superadmin','deputy','director'].includes(r));
   const allowed=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
   // Keep panel's selection independent from the Send tab's class selection.
   if(!allowed.length){root.innerHTML='<div class="panel"><h2>Мои классы</h2><p class="note">Классное руководство пока не назначено. Если это ошибка, обратитесь к завучу.</p></div>';return;}
@@ -764,6 +811,7 @@ function renderPanel(){
       <div class="tile"><div class="k">Ознакомлено</div><div class="v" id="afs-panel-ack-count">${confirmed}</div><div class="h" id="afs-panel-ack-summary">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
       <div class="tile"><div class="k">WhatsApp · заполненность</div><div class="v" id="afs-phone-percent">—</div><div class="h" id="afs-phone-count">Телефоны родителей</div></div>
     </div>
+    <div class="panel" id="afs-push-overview"><h2>🔔 Push-уведомления родителей</h2><p class="note">Загрузка статистики подключений…</p></div>
     <div class="panel"><div class="afs-history-head"><h2>История отзывов</h2>
       <div class="afs-history-filters" role="group" aria-label="Фильтр отзывов">
         <button class="chipbtn" data-afs-filter="all" aria-pressed="true">Все</button>
@@ -773,6 +821,7 @@ function renderPanel(){
       <p class="note">Новые отзывы выше старых. Откройте отзыв, чтобы увидеть содержание и подтверждения родителей.</p>
       <div id="afs-weekly-history-list"></div><div id="afs-history-list"></div>
     </div>`;
+  fsRenderPushAdmin(root,classId,isAdmin);
   const selector=root.querySelector('#afs-panel-class');
   selector.onchange=()=>{state.panelClass=Number(selector.value);renderPanel()};
   root.querySelector('#afs-export-class').onclick=async()=>{
