@@ -381,7 +381,8 @@ $('#login-form').addEventListener('submit',async e=>{
  const submit=e.currentTarget.querySelector('button[type="submit"]');
  submit.disabled=true;output.textContent='Выполняется вход…';
  try{
-  const isPhone=/^(?:\\+?7|8)?[\\d\\s()\\-]{10,20}$/.test(username);
+  const digits=username.replace(/[^0-9]/g,'');
+  const isPhone=/^(?:[78][0-9]{10}|[0-9]{10})$/.test(digits);
   let loginEmail=username;
   if(isPhone){
    const phone=normalizeKzPhone(username);
@@ -400,7 +401,7 @@ $('#login-form').addEventListener('submit',async e=>{
 });
 $('#forgot-password').addEventListener('click',async()=>{
  const email=$('#login-email').value.trim(),output=$('#login-error');
- if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){output.textContent='Введите email учётной записи в поле входа, затем нажмите «Восстановить пароль». Для входа по телефону обратитесь к администрации.';return}
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){output.textContent='Введите email учётной записи в поле входа, затем нажмите «Восстановить пароль». Для входа по телефону обратитесь к администрации.';return}
  const button=$('#forgot-password');button.disabled=true;output.textContent='Отправляем письмо для восстановления…';
  try{
   const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
