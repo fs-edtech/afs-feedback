@@ -752,8 +752,8 @@ function renderPanel(){
     </summary><div id="afs-panel-parents-body"><p class="note">Загружаем…</p></div></details>
     <div class="tiles afs-panel-metrics">
       <div class="tile"><div class="k">Учеников</div><div class="v">${pupils.length}</div><div class="h">В выбранном классе</div></div>
-      <div class="tile"><div class="k">Отзывов за 7 дней</div><div class="v">${recent}</div><div class="h">Опубликовано за последние 7 дней</div></div>
-      <div class="tile"><div class="k">Ознакомлено</div><div class="v">${confirmed}</div><div class="h">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
+      <div class="tile"><div class="k">Отчётов за 7 дней</div><div class="v" id="afs-panel-week-count">${recent}</div><div class="h">Опубликовано за последние 7 дней</div></div>
+      <div class="tile"><div class="k">Ознакомлено</div><div class="v" id="afs-panel-ack-count">${confirmed}</div><div class="h" id="afs-panel-ack-summary">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
       <div class="tile"><div class="k">WhatsApp · заполненность</div><div class="v" id="afs-phone-percent">—</div><div class="h" id="afs-phone-count">Телефоны родителей</div></div>
     </div>
     <div class="panel"><div class="afs-history-head"><h2>История отзывов</h2>
@@ -763,7 +763,7 @@ function renderPanel(){
         <button class="chipbtn" data-afs-filter="waiting" aria-pressed="false">Ожидают</button>
       </div></div>
       <p class="note">Новые отзывы выше старых. Откройте отзыв, чтобы увидеть содержание и подтверждения родителей.</p>
-      <div id="afs-history-list"></div>
+      <div id="afs-weekly-history-list"></div><div id="afs-history-list"></div>
     </div>`;
   const selector=root.querySelector('#afs-panel-class');
   selector.onchange=()=>{state.panelClass=Number(selector.value);renderPanel()};
@@ -784,7 +784,27 @@ function renderPanel(){
     }finally{if(button.isConnected)button.disabled=false;}
   };
   const list=root.querySelector('#afs-history-list');
+  const weeklyHistory=root.querySelector('#afs-weekly-history-list');
+  let weeklyReports=[],weeklyError=null,selectedHistoryFilter='all';
   function showHistory(filter){
+    selectedHistoryFilter=filter;
+    const weeklySelected=weeklyReports.filter(r=>{
+      const read=Number(r.parents_total)>0&&Number(r.acknowledged_count)>=Number(r.parents_total);
+      return filter==='all'||(filter==='read'&&read)||(filter==='waiting'&&!read);
+    });
+    weeklyHistory.innerHTML=weeklyError
+      ?'<div class="toast bad">Недельные отчёты: '+esc(weeklyError)+'</div>'
+      :'<div class="note" style="font-weight:700;margin:12px 0">Единые недельные отчёты · '+weeklySelected.length+'</div>'+
+      (weeklySelected.map(r=>{
+        const complete=Number(r.parents_total)>0&&Number(r.acknowledged_count)>=Number(r.parents_total);
+        const label=complete?'Ознакомились: '+r.acknowledged_count+' из '+r.parents_total:
+          (Number(r.parents_total)>0?'Ознакомились: '+r.acknowledged_count+' из '+r.parents_total:'Родительский аккаунт не привязан');
+        return '<div class="afs-review" style="padding:12px;margin-bottom:9px"><div class="fs-week-actions"><b>'+esc(r.student_name)+'</b><span class="note">'+esc(fsWeekLabel(r.week_start))+' · '+(r.sections?.length||0)+' предмет(ов)</span><span class="pill '+(complete?'ok':'warn')+'">'+esc(label)+'</span></div><div class="fs-week-actions" style="margin-top:8px"><button type="button" class="btn ghost" data-weekly-panel-view="'+r.id+'">Просмотреть единый отчёт</button></div></div>';
+      }).join('')||'<p class="note">Единых недельных отчётов по этому фильтру нет.</p>');
+    weeklyHistory.querySelectorAll('[data-weekly-panel-view]').forEach(btn=>btn.onclick=()=>{
+      const report=weeklyReports.find(r=>r.id===btn.dataset.weeklyPanelView);
+      if(report)fsShowModal(report,report.student_name,report.class_name);
+    });
     const selected=feedback.filter(f=>{
       const read=Number(f.parents_total)>0&&Number(f.acknowledged_count)>=Number(f.parents_total);
       return filter==='all'||(filter==='read'&&read)||(filter==='waiting'&&!read);
@@ -807,6 +827,24 @@ function renderPanel(){
     showHistory(btn.dataset.afsFilter);
   });
   showHistory('all');
+  (async()=>{
+    try{
+      const reports=await fsRpc('fs_weekly_panel_feed',{p_class_id:classId});
+      if(!root.isConnected||state.tab!=='panel'||state.panelClass!==classId)return;
+      weeklyReports=Array.isArray(reports)?reports:[];
+      weeklyError=null;
+      const newRecent=weeklyReports.filter(r=>new Date(r.published_at).getTime()>=weekAgo).length;
+      const newConfirmed=weeklyReports.filter(r=>Number(r.parents_total)>0&&Number(r.acknowledged_count)>=Number(r.parents_total)).length;
+      root.querySelector('#afs-panel-week-count').textContent=String(recent+newRecent);
+      root.querySelector('#afs-panel-ack-count').textContent=String(confirmed+newConfirmed);
+      root.querySelector('#afs-panel-ack-summary').textContent='Из '+(feedback.length+weeklyReports.length)+' опубликованных отчётов · все привязанные родители подтвердили';
+      showHistory(selectedHistoryFilter);
+    }catch(error){
+      if(!root.isConnected||state.panelClass!==classId)return;
+      weeklyError=error.message||String(error);
+      showHistory(selectedHistoryFilter);
+    }
+  })();
   const collapse=root.querySelector('#afs-parents-collapse');
   const parentBody=root.querySelector('#afs-panel-parents-body');
   let loaded=false;
@@ -1235,7 +1273,7 @@ function fsShowModal(report,name,cls,options={}){
  const modal=$('#fs-week-modal');$('#fs-week-document').innerHTML=fsHtmlDoc(report,name,cls);fsEnrichPreview(report).catch(e=>console.warn('Вложения: ',e));
  const bar=$('#fs-week-modal-actions');bar.replaceChildren();
  const pdf=document.createElement('button');pdf.className='btn ghost';pdf.textContent='Скачать PDF';pdf.onclick=()=>fsDownloadPdf(report,name,cls);bar.append(pdf);
- if(options.ack){const ack=document.createElement('button');ack.className='btn primary';ack.textContent=options.acknowledged?'Ознакомление подтверждено':'Я ознакомился(-ась)';ack.disabled=!!options.acknowledged;ack.onclick=async()=>{ack.disabled=true;try{await fsRpc('fs_weekly_receipt',{p_report_id:report.id,p_action:'acknowledge'});ack.textContent='Ознакомление подтверждено';}catch(e){ack.disabled=false;alert(e.message)}};bar.append(ack)}
+ if(options.ack){const ack=document.createElement('button');ack.className='btn primary';ack.textContent=options.acknowledged?'Ознакомление подтверждено':'Я ознакомился(-ась)';ack.disabled=!!options.acknowledged;ack.onclick=async()=>{ack.disabled=true;try{await fsRpc('fs_weekly_receipt',{p_report_id:report.id,p_action:'acknowledge'});ack.textContent='Ознакомление подтверждено';options.onAcknowledged?.();}catch(e){ack.disabled=false;alert(e.message)}};bar.append(ack)}
  modal.hidden=false;document.body.style.overflow='hidden';$('#fs-week-close').onclick=()=>{modal.hidden=true;document.body.style.overflow=''};
  modal.onclick=e=>{if(e.target===modal)$('#fs-week-close').click()};
 }
@@ -1397,7 +1435,7 @@ async function weeklyRenderParent(){
   root.querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>{fsParentChildId=Number(b.dataset.child);weeklyRenderParent()});
   const list=reports.filter(r=>r.student_id===fsParentChildId);
   const host=root.querySelector('#fs-parent-reports');
-  host.innerHTML=list.length?list.map(r=>'<div class="fs-week-row" style="padding:14px"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div><div class="note">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join(''):'<p class="note">За выбранного ребёнка пока нет опубликованных отчётов.</p>';
+  host.innerHTML=list.length?list.map(r=>'<div class="fs-week-row" style="padding:14px"><div class="fs-week-actions" style="justify-content:space-between;align-items:flex-start"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div>'+(r.acknowledged_at?'':'<span class="pill" data-parent-new="'+r.id+'" style="background:var(--navy);color:var(--navy-fg)">Новая запись</span>')+'</div><div class="note" data-parent-ack-label="'+r.id+'">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join(''):'<p class="note">За выбранного ребёнка пока нет опубликованных отчётов.</p>';
   const oldFeedback=state.feedback.filter(f=>f.student_id===fsParentChildId&&f.status==='published');
   if(oldFeedback.length){
    const archive=document.createElement('details');archive.className='panel';archive.style.marginTop='18px';
@@ -1407,7 +1445,12 @@ async function weeklyRenderParent(){
   }
   for(const r of list){
    const view=host.querySelector('[data-parent-view="'+r.id+'"]');view.onclick=async()=>{try{await fsRpc('fs_weekly_receipt',{p_report_id:r.id,p_action:'open'});r.opened_at=r.opened_at||new Date().toISOString()}catch(e){alert('Просмотр не зафиксирован: '+e.message)}
-    fsShowModal(r,r.student_name,r.class_name,{ack:true,acknowledged:!!r.acknowledged_at})};
+    fsShowModal(r,r.student_name,r.class_name,{ack:true,acknowledged:!!r.acknowledged_at,onAcknowledged:()=>{
+      r.acknowledged_at=new Date().toISOString();
+      host.querySelector('[data-parent-new="'+r.id+'"]')?.remove();
+      const label=host.querySelector('[data-parent-ack-label="'+r.id+'"]');
+      if(label)label.textContent=(r.sections?.length||0)+' предмет(ов) · Ознакомление подтверждено';
+    }})};
    host.querySelector('[data-parent-download="'+r.id+'"]').onclick=()=>fsDownloadPdf(r,r.student_name,r.class_name);
   }
  }catch(e){root.innerHTML='<div class="toast bad">Не удалось загрузить отчёты: '+esc(e.message)+'</div>'}
