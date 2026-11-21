@@ -1,5 +1,9 @@
 <title>Обратная связь AFS</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#253c56">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/feedback/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
 <style>
@@ -224,6 +228,10 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-week-paper a{color:#1f3a5f;text-decoration:underline}
 .fs-week-student-switch{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 @media(max-width:640px){.fs-week-paper{padding:15px}.fs-week-dialog{padding:12px}}
+.fs-push-settings{border:1px solid var(--line);border-radius:13px;padding:14px;margin:12px 0;background:var(--surface)}
+.fs-push-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.fs-push-note{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+.fs-push-button{white-space:nowrap}
 </style>
 
 <header><div class="wrap hrow">
@@ -1418,6 +1426,58 @@ function renderWeeklyCurator(){
  })();
 }
 
+const FS_PUSH_PUBLIC_KEY="BIaY4ZSIAoWQl6jUuY2N4aid6G-Lr7YwvFuSFFSSvusb2WmEzbGd4NBPOeYIhWvVpfQ4e-qNWJKn8XPlzjcqYfk";
+function fsPushKeyBytes(value){
+ const padded=value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4);
+ const bytes=atob(padded);return Uint8Array.from(bytes,c=>c.charCodeAt(0));
+}
+function fsPushIsIos(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1)}
+function fsPushIsInstalled(){return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}
+async function fsPushMount(){
+ const box=document.getElementById('fs-push-settings');
+ if(!box||!state.roles.includes('parent'))return;
+ box.className='fs-push-settings';
+ const ready='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+ const ios=fsPushIsIos(),installed=fsPushIsInstalled();
+ const help=ios&&!installed
+   ?'На iPhone откройте сайт в Safari, нажмите «Поделиться» → «На экран Домой», затем откройте Future School с главного экрана и включите уведомления.'
+   :'Уведомления отправляются только после вашего разрешения и сообщают о новой обратной связи без оценок и персональных замечаний.';
+ box.innerHTML='<div class="fs-push-header"><div><strong>🔔 Уведомления о новых отчётах</strong><div class="fs-push-note">'+help+'</div></div><button type="button" class="btn ghost fs-push-button" id="fs-push-toggle" disabled>Проверяем…</button></div><div id="fs-push-status" class="fs-push-note" role="status"></div>';
+ const button=box.querySelector('#fs-push-toggle'),status=box.querySelector('#fs-push-status');
+ if(!ready){button.textContent='Не поддерживается';status.textContent='Этот браузер не поддерживает Web Push. Попробуйте актуальный Safari, Chrome или Edge.';return}
+ if(ios&&!installed){button.textContent='Откройте с экрана «Домой»';status.textContent='В обычной вкладке Safari на iPhone запрос разрешения недоступен.';return}
+ if(Notification.permission==='denied'){button.textContent='Заблокировано';status.textContent='Разрешите уведомления для сайта в настройках устройства или браузера.';return}
+ try{
+  const registration=await navigator.serviceWorker.register('/feedback/sw.js',{scope:'/feedback/'});
+  if(!box.isConnected)return;
+  const current=await registration.pushManager.getSubscription();
+  const known=await fsRpc('fs_parent_push_manage',{p_action:'status'});
+  const enabled=!!current && Number(known?.enabled_devices||0)>0 && Notification.permission==='granted';
+  button.disabled=false;button.textContent=enabled?'Отключить уведомления':'Включить уведомления';
+  status.textContent=enabled?'Уведомления включены на этом устройстве.':'Вы сами решаете, разрешать ли уведомления на этом устройстве.';
+  button.onclick=async()=>{
+   button.disabled=true;status.textContent='Обрабатываем настройку уведомлений…';
+   try{
+    if(button.textContent==='Отключить уведомления'){
+     const sub=await registration.pushManager.getSubscription();
+     if(sub){await fsRpc('fs_parent_push_manage',{p_action:'unsubscribe',p_endpoint:sub.endpoint});await sub.unsubscribe()}
+     button.textContent='Включить уведомления';status.textContent='Уведомления отключены на этом устройстве.';
+    }else{
+     const permission=await Notification.requestPermission();
+     if(permission!=='granted'){button.textContent='Включить уведомления';status.textContent='Разрешение не получено. Уведомления не будут отправляться.';return}
+     let sub=await registration.pushManager.getSubscription();
+     if(!sub)sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:fsPushKeyBytes(FS_PUSH_PUBLIC_KEY)});
+     const json=sub.toJSON();
+     if(!json.keys?.p256dh||!json.keys?.auth)throw Error('Не удалось получить ключи подписки браузера');
+     await fsRpc('fs_parent_push_manage',{p_action:'subscribe',p_endpoint:sub.endpoint,p_p256dh:json.keys.p256dh,p_auth:json.keys.auth});
+     button.textContent='Отключить уведомления';status.textContent='Готово! Вы получите push, когда куратор опубликует новую недельную обратную связь.';
+    }
+   }catch(e){status.textContent='Не удалось изменить настройку: '+(e.message||String(e))}
+   finally{button.disabled=false}
+  };
+ }catch(e){button.textContent='Недоступно';status.textContent='Не удалось подключить push на этом устройстве: '+(e.message||String(e))}
+}
+
 async function weeklyRenderParent(){
  const root=$('#v-parent');root.innerHTML='<div class="panel">Загружаем единые недельные отчёты…</div>';
  if(!state.roles.includes('parent')){root.textContent='Нет доступа';return}
@@ -1428,10 +1488,11 @@ async function weeklyRenderParent(){
   if(mineError||linkError)throw Error(msg(mineError||linkError));
   const parentIds=new Set((mine||[]).map(p=>p.id));
   const ids=[...new Set((links||[]).filter(x=>parentIds.has(x.parent_id)).map(x=>x.student_id))];
-  if(!ids.length){root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Нет привязанных детей. Обратитесь к администрации.</p></div>';return}
+  if(!ids.length){root.innerHTML='<div class="panel"><h2>Мои дети</h2><div id="fs-push-settings"></div><p class="note">Нет привязанных детей. Обратитесь к администрации.</p></div>';fsPushMount();return}
   if(!ids.includes(fsParentChildId))fsParentChildId=ids[0];
   const kids=ids.map(id=>{const r=reports.find(x=>x.student_id===id);if(r)return r;const s=state.students.find(x=>x.id===id);return {student_id:id,student_name:s?.full_name||'Ученик',class_name:state.classes.find(c=>c.id===s?.class_id)?.name||''}});
-  root.innerHTML='<div class="panel"><h2>Мои дети</h2><p class="note">Выберите ребёнка и учебную неделю. Каждый документ объединяет все предметы.</p><div class="fs-week-student-switch">'+kids.map(k=>'<button class="btn '+(k.student_id===fsParentChildId?'primary':'ghost')+'" data-child="'+k.student_id+'">'+esc(k.student_name)+' · '+esc(k.class_name)+'</button>').join('')+'</div><div id="fs-parent-reports"></div></div>';
+  root.innerHTML='<div class="panel"><h2>Мои дети</h2><div id="fs-push-settings"></div><p class="note">Выберите ребёнка и учебную неделю. Каждый документ объединяет все предметы.</p><div class="fs-week-student-switch">'+kids.map(k=>'<button class="btn '+(k.student_id===fsParentChildId?'primary':'ghost')+'" data-child="'+k.student_id+'">'+esc(k.student_name)+' · '+esc(k.class_name)+'</button>').join('')+'</div><div id="fs-parent-reports"></div></div>';
+  fsPushMount();
   root.querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>{fsParentChildId=Number(b.dataset.child);weeklyRenderParent()});
   const list=reports.filter(r=>r.student_id===fsParentChildId);
   const host=root.querySelector('#fs-parent-reports');
