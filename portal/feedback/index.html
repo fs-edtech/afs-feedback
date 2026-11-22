@@ -288,6 +288,12 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-students-fold .slist{max-height:56vh;overflow-y:auto}
 .fs-students-fold .classbar{margin-bottom:10px}
 @media(max-width:700px){.fs-fold-panel>summary{padding:12px}.fs-fold-content,.fs-fold-panel>#afs-push-inner{padding:10px}}
+.fs-channel-choices{border:1px solid var(--line);border-radius:12px;margin:14px 0;padding:0;overflow:hidden}
+.fs-channel-choices>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px;list-style:none;cursor:pointer}
+.fs-channel-choices>summary::-webkit-details-marker{display:none}
+.fs-channel-choices[open]>summary{border-bottom:1px solid var(--line)}
+.fs-channel-choices>p,.fs-channel-choices>#fs-channel-body{margin:12px}
+.fs-channel-choices input[type=checkbox]{width:18px;height:18px}
 </style>
 
 <header><div class="wrap hrow">
@@ -421,19 +427,20 @@ async function loadData(){
   $('#account-role-label').textContent = roleLabels[mainRole] || 'Пользователь';
   const isAdmin=state.roles.includes('superadmin')||state.roles.includes('deputy');
   $('#tab-parent').hidden=!state.roles.includes('parent');
-  $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>a.assignment_type==='homeroom'));
+  $('#tab-class').hidden=!(isAdmin||state.assignments.some(a=>['homeroom','tutor'].includes(a.assignment_type)));
   if(state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher')){state.tab='parent';}
   $('#tab-manage').hidden=!isAdmin;
   // For teachers, only Send + Panel. Admin roster remains for student import.
   $('#tab-class').hidden=true;
   $('#tab-roster').hidden=true;
-  const hasHomeroom=state.assignments.some(a=>a.assignment_type==='homeroom');
+  const hasHomeroom=state.assignments.some(a=>['homeroom','tutor'].includes(a.assignment_type));
   const canPanel=isAdmin||state.roles.includes('director')||state.roles.includes('tutor')||hasHomeroom;
   $('#tab-panel').hidden=!canPanel;
   $('#tab-weekly').hidden=!(isAdmin||state.roles.includes('tutor')||hasHomeroom);
   if(state.tab==='panel'&&!canPanel)state.tab='send';
+  if(state.tab==='send'&&$('#tab-send').hidden)state.tab=state.roles.includes('parent')?'parent':canPanel?'panel':'send';
   if(state.tab==='class'||state.tab==='roster')state.tab=isAdmin?'manage':(canPanel?'panel':'send');
-  $('#tab-send').hidden=state.roles.includes('parent')&&!isAdmin&&!state.roles.includes('teacher');
+  $('#tab-send').hidden=!(isAdmin||state.roles.includes('teacher')||state.assignments.some(a=>a.assignment_type==='subject_teacher'));
   $('#tab-roster').hidden=true;
   $('#tab-panel').hidden=!canPanel;
   if(!isAdmin && state.tab==='manage')state.tab='send';
@@ -717,7 +724,7 @@ function receiptBreakdown(f){
 function renderMyClass(){
   const root=$('#v-class');
   const isAdmin=state.roles.some(r=>['superadmin','deputy'].includes(r));
-  const allowedClasses=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  const allowedClasses=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&['homeroom','tutor'].includes(a.assignment_type)));
   if(!allowedClasses.length){root.innerHTML='<div class="panel"><p>Нет назначенного классного руководства.</p></div>';return;}
   const selected=allowedClasses.some(c=>c.id===state.selectedClass)?state.selectedClass:allowedClasses[0].id;
   const pupils=state.students.filter(s=>s.class_id===selected);
@@ -993,6 +1000,39 @@ async function fsRenderPushAdmin(panelRoot,classId,isAdmin){
     '<p class="note" style="margin-top:10px">Статистика обновляется по кнопке. Статус подписки определяется по записи платформы; если устройство перестало принимать push, запись обновится после ошибки службы доставки.</p>';
   }catch(error){if(body.isConnected)body.innerHTML='<div class="toast bad">Не удалось загрузить статистику push: '+esc(error.message||String(error))+'</div>'}
  };
+  const channel=document.createElement('details');
+  channel.className='fs-channel-choices';
+  channel.innerHTML='<summary><strong>WhatsApp как резервный канал</strong><span class="note">Выбор для родителей этого класса</span></summary>'+
+    '<p class="note">WhatsApp будет использоваться только при подтверждённом согласии родителя и отсутствии активного push. Платная отправка пока не включена. Отметка push означает подключённое устройство, а не подтверждённое прочтение.</p>'+
+    '<div id="fs-channel-body" class="note">Разверните для просмотра настроек.</div>';
+  inner.append(channel);
+  let channelLoading=false;
+  async function loadChannels(){
+   if(channelLoading||!channel.isConnected)return;
+   channelLoading=true;
+   const output=channel.querySelector('#fs-channel-body');output.textContent='Загружаем настройки…';
+   try{
+    const choices=await fsRpc('fs_feedback_channel_choices',{p_class_id:classId});
+    if(!channel.isConnected||state.panelClass!==classId)return;
+    output.innerHTML='<div class="tw"><table><thead><tr><th>Родитель</th><th>Push</th><th>Согласие WhatsApp</th><th>WhatsApp резерв</th><th>Выбранный канал</th></tr></thead><tbody>'+
+      (choices||[]).map(c=>'<tr><td>'+esc(c.parent_name)+'</td>'+
+       '<td>'+(c.push_preferred?'Подключён':'Нет активного push')+'</td>'+
+       '<td>'+(c.whatsapp_consent?'Есть':'Нет')+'</td>'+
+       '<td><input type="checkbox" data-wa-parent="'+Number(c.parent_id)+'" '+(c.whatsapp_enabled?'checked':'')+' aria-label="WhatsApp резерв для '+esc(c.parent_name)+'"></td>'+
+       '<td>'+(c.push_preferred?'Push без дубля':c.whatsapp_would_queue?'WhatsApp · после подключения':'Только в кабинете')+'</td></tr>').join('')+
+       '</tbody></table></div>'+
+       '<p class="note">Снятие галочки выключает резервный WhatsApp для этого родителя. При отсутствии согласия рассылки не будет даже с включённой галочкой.</p>';
+    output.querySelectorAll('[data-wa-parent]').forEach(box=>box.onchange=async()=>{
+      const enabled=box.checked;box.disabled=true;
+      try{await fsRpc('fs_feedback_channel_choices',{p_class_id:classId,p_parent_id:Number(box.dataset.waParent),p_whatsapp_enabled:enabled});channelLoading=false;await loadChannels()}
+      catch(error){box.checked=!enabled;alert('Не удалось сохранить канал: '+error.message)}
+      finally{box.disabled=false}
+    });
+   }catch(e){output.textContent='Ошибка загрузки каналов: '+e.message}
+   finally{channelLoading=false}
+  }
+  channel.addEventListener('toggle',()=>{if(channel.open)loadChannels()});
+
  scope.onchange=refresh;
  inner.querySelector('#fs-push-refresh').onclick=refresh;
  container.addEventListener('toggle',()=>{if(container.open)refresh()});
@@ -1000,7 +1040,7 @@ async function fsRenderPushAdmin(panelRoot,classId,isAdmin){
 function renderPanel(){
   const root=$('#v-panel');
   const isAdmin=state.roles.some(r=>['superadmin','deputy','director'].includes(r));
-  const allowed=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+  const allowed=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&['homeroom','tutor'].includes(a.assignment_type)));
   // Keep panel's selection independent from the Send tab's class selection.
   if(!allowed.length){root.innerHTML='<div class="panel"><h2>Мои классы</h2><p class="note">Классное руководство пока не назначено. Если это ошибка, обратитесь к завучу.</p></div>';return;}
   if(!allowed.some(c=>c.id===state.panelClass))state.panelClass=allowed[0].id;
@@ -1242,7 +1282,7 @@ function afsWireStaffManager(d){
   const labelAssignment=a=>{
     const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';
     const sub=d.subjects.find(s=>s.id===a.subject_id)?.name||'';
-    return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+    return cl+' · '+(['homeroom','tutor'].includes(a.assignment_type)?'Классный руководитель':sub);
   };
   root.querySelectorAll('[data-staff-copy-login]').forEach(b=>b.onclick=async()=>{
     const item=byId.get(b.dataset.staffCopyLogin);if(item)await navigator.clipboard.writeText(item.email||'');
