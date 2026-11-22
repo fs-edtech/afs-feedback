@@ -54,20 +54,25 @@ select.scope{width:165px;padding:9px;font-size:12px}
  const db=window.supabase.createClient('https://wvkcafxruzguifybeeab.supabase.co','sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-');
  const $=id=>document.getElementById(id);
  const status=(msg,cls='')=>{$('status').textContent=msg;$('status').className=cls};
- const roleNames={director:'Директор',deputy:'Завуч',teacher:'Учитель',tutor:'Тьютор',staff:'Сотрудник',parent:'Родитель',superadmin:'Суперадмин'};
+ const roleNames={director:'Директор',deputy:'Завуч',teacher:'Учитель',tutor:'Тьютор / куратор',staff:'Сотрудник',parent:'Родитель',superadmin:'Суперадмин'};
  const editable=['director','deputy','teacher','tutor','staff'];
  const moduleNames={admin:'Администрирование',feedback:'Обратная связь',nis:'НИШ-тестирование',observations:'Наблюдение уроков'};
- let people=[],activeId=null,busy=false,seq=0;
+ let people=[],activeId=null,busy=false,seq=0,staffMeta=new Map(),schoolClasses=[];
  const node=(tag,value,cls)=>{const a=document.createElement(tag);if(value!==undefined)a.textContent=value;if(cls)a.className=cls;return a};
  async function rpc(fn,args){const {data,error}=await db.rpc(fn,args);if(error)throw Error(error.message);return data}
  function list(){
    const q=$('search').value.trim().toLocaleLowerCase('ru');
-   const match=people.filter(p=>(p.full_name+' '+(p.email||'')).toLocaleLowerCase('ru').includes(q));
+   const match=people.filter(p=>{const m=staffMeta.get(p.id)||{};return (p.full_name+' '+(p.email||'')+' '+(m.subjects||[]).join(' ')+' '+(m.classes||[]).map(x=>x.name).join(' ')).toLocaleLowerCase('ru').includes(q)});
    $('count').textContent='Сотрудников: '+match.length+' из '+people.length;
    $('list').replaceChildren();
    for(const p of match){
     const btn=node('button',undefined,'person'+(p.id===activeId?' active':''));
-    const cap=node('div');cap.append(node('b',p.full_name),node('small',p.email||'Без email'));
+    const cap=node('div');const meta=staffMeta.get(p.id)||{};
+    const subjects=(meta.subjects||[]).join(', ');
+    const mentoring=(meta.classes||[]).map(x=>(x.type==='homeroom'?'Классное руководство':'Тьюторство')+' '+x.name).join(' · ');
+    cap.append(node('b',p.full_name),node('small',subjects?'Предметы: '+subjects:'Предметная нагрузка не указана'));
+    if(mentoring)cap.append(node('small',mentoring));
+    cap.append(node('small',p.email||'Без email'));
     btn.append(cap,node('span',p.id===activeId?'Выбрано':'→','tag'));
     btn.onclick=()=>{if(busy)return;activeId=p.id;list();render(p.id)};$('list').append(btn);
    }
@@ -117,7 +122,7 @@ select.scope{width:165px;padding:9px;font-size:12px}
        }
        await rpc('fs_admin_bind_onboarding',{p_onboarding_id:candidate.id,p_user_id:user.id});
        status('Аккаунт '+login+' создан. Откройте карточку сотрудника ниже и назначьте директорскую / завучскую роль. Пароль можно выдать в разделе обратной связи.','ok');
-       people=await rpc('afs_staff_directory',{});people.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
+       people=await rpc('afs_staff_directory',{});await loadStaffMeta();people.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
        $('search').value=candidate.full_name;activeId=user.id;list();await render(user.id);
        status('Готово: '+candidate.full_name+' добавлен. Логин: '+login+'. Сначала выдайте пароль в «Обратная связь → Сотрудники и управление», затем назначьте здесь роли директора/завуча.','ok');
        btn.textContent='Подключён';btn.disabled=true;
@@ -129,11 +134,60 @@ select.scope{width:165px;padding:9px;font-size:12px}
    }
    const data=await rpc('afs_staff_directory',{});
    people=Array.isArray(data)?data:[];
+   await loadStaffMeta();
    people.sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name),'ru'));
    $('search').oninput=list;list();
    status('Выберите сотрудника для просмотра его прав.');
   }catch(e){fail(e.message)}
  }
+async function loadStaffMeta(){
+ try{
+  const r=await rpc('fs_admin_staff_card_data',{});
+  staffMeta=new Map((r?.staff||[]).map(p=>[p.id,p]));
+  schoolClasses=r?.classes||[];
+ }catch(e){console.warn('Не удалось загрузить преподавательские назначения',e.message);staffMeta=new Map();schoolClasses=[]}
+}
+function appendMentorEditor(root,id){
+ const meta=staffMeta.get(id)||{};
+ const section=node('div',undefined,'section');
+ section.append(node('h2','Предметная нагрузка и сопровождение классов'));
+ const desc=node('p', (meta.subjects||[]).length?'Преподаёт: '+meta.subjects.join(', '):'Предметная нагрузка не указана. Для тьютора без учебных часов это нормально.');
+ section.append(desc);
+ const assigned=meta.classes||[];
+ const block=node('div',undefined,'section');
+ block.append(node('h3','Закреплённые классы'));
+ if(!assigned.length)block.append(node('p','Классы сопровождения пока не назначены.'));
+ for(const x of assigned){
+  const r=node('div',undefined,'row');r.append(node('div',undefined,(x.type==='tutor'?'Тьютор / куратор':'Классный руководитель')+' · '+x.name));
+  const remove=node('button','Снять назначение','tag');remove.type='button';
+  remove.onclick=async()=>{
+   if(!confirm('Снять закрепление '+x.name+' у этого сотрудника? Доступ к классу будет прекращён.'))return;
+   remove.disabled=true;
+   try{await rpc('fs_admin_set_class_mentor',{p_target:id,p_class_id:x.class_id,p_type:x.type,p_enabled:false});await loadStaffMeta();list();await render(id);status('Назначение снято','ok')}catch(e){status(e.message,'err');remove.disabled=false}
+  };
+  r.append(remove);block.append(r);
+ }
+ section.append(block);
+ if(schoolClasses.length){
+  const editor=node('div',undefined,'section');editor.append(node('h3','Назначить сопровождение класса'));
+  const row=node('div',undefined,'row');
+  const classSelect=node('select');classSelect.setAttribute('aria-label','Класс');
+  for(const c of schoolClasses){const option=new Option(c.name,c.id);classSelect.add(option)}
+  const typeSelect=node('select');typeSelect.setAttribute('aria-label','Тип сопровождения');
+  typeSelect.add(new Option('Тьютор / куратор','tutor'));typeSelect.add(new Option('Классный руководитель','homeroom'));
+  const add=node('button','Закрепить класс','tag dark');add.type='button';
+  add.onclick=async()=>{
+   add.disabled=true;
+   try{await rpc('fs_admin_set_class_mentor',{p_target:id,p_class_id:Number(classSelect.value),p_type:typeSelect.value,p_enabled:true});await loadStaffMeta();list();await render(id);status('Класс закреплён. Доступ обновлён','ok')}
+   catch(e){status(e.message,'err');add.disabled=false}
+  };
+  row.append(classSelect,typeSelect,add);editor.append(row);
+  editor.append(node('p','Классный руководитель и тьютор получают одинаковые права на закреплённый класс. Предметная нагрузка при этом не меняется.'));
+  section.append(editor);
+ }
+ root.append(section);
+}
+
  async function render(id){
   const serial=++seq;$('editor').replaceChildren(node('div','Загружаем роли и разрешения…','empty'));status('');
   try{
@@ -155,6 +209,7 @@ select.scope{width:165px;padding:9px;font-size:12px}
       finally{busy=false;checked.disabled=false}
     };r.append(details,checked);sec.append(r);
    }root.append(sec);
+   appendMentorEditor(root,id);
    const perms=node('div',undefined,'section');perms.append(node('h2','Точные разрешения'));
    perms.append(node('p','По умолчанию — согласно ролям. Можно индивидуально разрешить или запретить действие.'));
    let current='';
