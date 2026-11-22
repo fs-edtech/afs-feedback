@@ -361,6 +361,15 @@ header{box-shadow:0 2px 16px #00000005}
  #fs-parent-reports .fs-week-actions:last-child{grid-template-columns:minmax(0,1fr)}
  .fs-notif-settings-row{grid-template-columns:minmax(0,1fr) 51px 51px}
 }
+
+/* Notification popup is anchored in script to the bell's screen position. */
+.fs-notif-popover{position:fixed;z-index:8000;min-width:0;overscroll-behavior:contain}
+.fs-notif-actions .fs-notif-gear{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;vertical-align:middle}
+.fs-notif-actions .fs-notif-gear svg{width:18px;height:18px}
+.fs-notif-actions button{display:inline-flex;align-items:center;gap:7px}
+@media(max-width:680px){
+ .fs-notif-popover{position:fixed;top:auto;right:auto;left:auto;width:auto;max-height:70dvh}
+}
 </style>
 
 <header><div class="wrap hrow">
@@ -616,22 +625,50 @@ async function fsNotifOpenItem(id){
 }
 function fsNotifWireItems(host){host.querySelectorAll('[data-notif-id]').forEach(b=>b.onclick=()=>fsNotifOpenItem(b.dataset.notifId))}
 async function fsNotifMarkAll(){try{await fsNotifRpc({p_action:'mark_all'});await fsNotifLoad()}catch(e){alert('Не удалось отметить прочитанным: '+e.message)}}
+
+function fsNotifPositionPopover(){
+ const pop=$('#fs-notif-popover'),bell=$('#fs-notif-bell');
+ if(pop.hidden||!bell)return;
+ const r=bell.getBoundingClientRect();
+ const viewport=window.visualViewport;
+ const leftEdge=viewport?.offsetLeft||0,topEdge=viewport?.offsetTop||0;
+ const vw=viewport?.width||window.innerWidth,vh=viewport?.height||window.innerHeight;
+ const edge=10,gap=9;
+ const width=Math.min(370,Math.max(220,vw-2*edge));
+ const x=Math.max(leftEdge+edge,Math.min(r.right-width,leftEdge+vw-width-edge));
+ const below=topEdge+vh-r.bottom-edge-gap;
+ const above=r.top-(topEdge+edge+gap);
+ const openAbove=below<220&&above>below;
+ const available=Math.max(90,openAbove?above:below);
+ const height=Math.min(470,available);
+ pop.style.position='fixed';
+ pop.style.width=width+'px';
+ pop.style.left=x+'px';
+ pop.style.right='auto';
+ pop.style.top=openAbove?'auto':Math.round(r.bottom+gap)+'px';
+ pop.style.bottom=openAbove?Math.round(window.innerHeight-r.top+gap)+'px':'auto';
+ pop.style.maxHeight=Math.floor(height)+'px';
+ pop.style.overflowY='auto';
+ pop.dataset.placement=openAbove?'top':'bottom';
+}
+
 function fsNotifRenderPopover(){
  const host=$('#fs-notif-popover');
  const newest=fsNotifItems.filter(n=>!n.read_at).slice(0,5);
  const selected=newest.length?newest:fsNotifItems.slice(0,5);
  host.innerHTML='<div class="fs-notif-popover-head"><strong>Уведомления</strong><button type="button" class="btn ghost" id="fs-notif-allread">Прочитать все</button></div>'+
  (selected.map(fsNotifItemHtml).join('')||'<p class="note">Новых уведомлений пока нет.</p>')+
- '<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-seeall">Все уведомления</button><button class="btn ghost" id="fs-notif-settings">⚙ Настройки</button></div>';
+ '<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-seeall">Все уведомления</button><button class="btn ghost" id="fs-notif-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки</button></div>';
  fsNotifWireItems(host);
  host.querySelector('#fs-notif-allread').onclick=fsNotifMarkAll;
  host.querySelector('#fs-notif-seeall').onclick=()=>{fsNotifView='list';fsNotifSetModal(true);fsNotifRenderAll()};
  host.querySelector('#fs-notif-settings').onclick=()=>fsNotifOpenSettings();
+ fsNotifPositionPopover();
 }
 function fsNotifRenderAll(){
  fsNotifView='list';$('#fs-notif-modal-title').textContent='Все уведомления';
  const host=$('#fs-notif-modal-content');
- host.innerHTML='<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-modal-read">Прочитать все</button><button class="btn ghost" id="fs-notif-modal-settings">⚙ Настройки уведомлений</button></div>'+
+ host.innerHTML='<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-modal-read">Прочитать все</button><button class="btn ghost" id="fs-notif-modal-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки уведомлений</button></div>'+
  (fsNotifItems.map(fsNotifItemHtml).join('')||'<p class="note">Уведомлений пока нет.</p>');
  fsNotifWireItems(host);
  host.querySelector('#fs-notif-modal-read').onclick=fsNotifMarkAll;
@@ -713,11 +750,17 @@ function fsNotifStop(){
 $('#fs-notif-bell').onclick=()=>{
  const pop=$('#fs-notif-popover');pop.hidden=!pop.hidden;
  $('#fs-notif-bell').setAttribute('aria-expanded',String(!pop.hidden));
- if(!pop.hidden){fsNotifRenderPopover();fsNotifLoad()}
+ if(!pop.hidden){fsNotifRenderPopover();fsNotifPositionPopover();fsNotifLoad()}
 };
 $('#fs-notif-modal-close').onclick=()=>fsNotifSetModal(false);
 $('#fs-notif-modal').onclick=e=>{if(e.target.id==='fs-notif-modal')fsNotifSetModal(false)};
-document.addEventListener('click',e=>{const anchor=$('#fs-notif-anchor');if(anchor&&!anchor.contains(e.target))$('#fs-notif-popover').hidden=true});
+document.addEventListener('click',e=>{const anchor=$('#fs-notif-anchor');if(anchor&&!anchor.contains(e.target)){$('#fs-notif-popover').hidden=true;$('#fs-notif-bell').setAttribute('aria-expanded','false')}});
+window.addEventListener('resize',fsNotifPositionPopover,{passive:true});
+window.addEventListener('scroll',fsNotifPositionPopover,{passive:true});
+if(window.visualViewport){
+ window.visualViewport.addEventListener('resize',fsNotifPositionPopover,{passive:true});
+ window.visualViewport.addEventListener('scroll',fsNotifPositionPopover,{passive:true});
+}
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
 function pickTab(tab){if(tab==='roster'||(tab==='panel'&&$('#tab-panel').hidden))return;if(tab==='weekly'&&$('#tab-weekly').hidden)return;if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent','weekly']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
@@ -1965,7 +2008,7 @@ async function weeklyRenderParent(){
   root.innerHTML='<div class="panel"><h2>Мои дети</h2><div id="fs-push-settings"></div><p class="note">Выберите ребёнка и учебную неделю. Каждый документ объединяет все предметы.</p><div class="fs-week-student-switch">'+kids.map(k=>'<button class="btn '+(k.student_id===fsParentChildId?'primary':'ghost')+'" data-child="'+k.student_id+'">'+esc(k.student_name)+' · '+esc(k.class_name)+'</button>').join('')+'</div><div id="fs-parent-reports"></div></div>';
   fsPushMount();
   root.querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>{fsParentChildId=Number(b.dataset.child);weeklyRenderParent()});
-  const list=reports.filter(r=>r.student_id===fsParentChildId);
+  const list=reports.filter(r=>r.student_id===fsParentChildId).sort((a,b)=>String(b.week_start||'').localeCompare(String(a.week_start||''))||String(b.published_at||'').localeCompare(String(a.published_at||'')));
   const host=root.querySelector('#fs-parent-reports');
   host.innerHTML=list.length?list.map(r=>'<div class="fs-week-row" style="padding:14px"><div class="fs-week-actions" style="justify-content:space-between;align-items:flex-start"><div style="font-weight:700">'+esc(fsWeekLabel(r.week_start))+'</div>'+(r.acknowledged_at?'':'<span class="pill" data-parent-new="'+r.id+'" style="background:var(--navy);color:var(--navy-fg)">Новая запись</span>')+'</div><div class="note" data-parent-ack-label="'+r.id+'">'+(r.sections?.length||0)+' предмет(ов) · '+(r.acknowledged_at?'Ознакомление подтверждено':'Ожидает ознакомления')+'</div><div class="fs-week-actions" style="margin-top:12px"><button class="btn ghost" type="button" data-parent-view="'+r.id+'">Просмотреть</button><button class="btn ghost" type="button" data-parent-download="'+r.id+'">Скачать PDF</button></div></div>').join(''):'<p class="note">За выбранного ребёнка пока нет опубликованных отчётов.</p>';
   const oldFeedback=state.feedback.filter(f=>f.student_id===fsParentChildId&&f.status==='published');
