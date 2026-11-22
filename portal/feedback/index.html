@@ -232,6 +232,14 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-push-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .fs-push-note{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
 .fs-push-button{white-space:nowrap}
+.fs-push-heading{display:flex;align-items:flex-start;gap:9px}
+.fs-push-heading-icon{display:inline-flex;align-items:center;color:var(--fg);flex-shrink:0}
+.fs-push-settings-enabled{display:flex;align-items:center;gap:8px;padding:9px 12px;border:0;background:transparent;margin:6px 0 10px;color:var(--muted);font-size:12px;line-height:1.5}
+.fs-push-enabled-icon{display:inline-flex;align-items:center;flex-shrink:0;color:var(--fg)}
+.fs-push-enabled-icon svg{width:16px;height:16px}
+.fs-push-settings-link{border:0;background:transparent;color:var(--navy);font:inherit;font-weight:650;text-decoration:underline;cursor:pointer;padding:0}
+.fs-push-settings-link:hover{text-decoration:none}
+
 /* Manage accordions: collapsed by default, preserving existing forms */
 .fs-manage-accordion{display:block;margin:12px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
 .fs-manage-accordion>summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none;padding:16px 18px;font-weight:700;font-size:15px;line-height:1.45}
@@ -611,6 +619,7 @@ async function fsNotifOpenSettings(){
       await fsNotifRpc({p_action:'set_preference',p_category:el.dataset.category,p_inapp:inapp.checked,p_push:true});
     }
     info.textContent=val?'Push включён на этом устройстве':'Push отключён для обратной связи';
+    if(document.getElementById('fs-push-settings'))fsPushMount();
    }catch(e){el.checked=!val;info.textContent='Ошибка: '+e.message}
    finally{el.disabled=false}
   });
@@ -1783,6 +1792,13 @@ function fsPushKeyBytes(value){
 }
 function fsPushIsIos(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1)}
 function fsPushIsInstalled(){return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}
+function fsPushShowEnabled(box){
+ if(!box?.isConnected)return;
+ box.className='fs-push-settings fs-push-settings-enabled';
+ box.innerHTML='<span class="fs-push-enabled-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>'+
+ '<span>Уведомления включены. Отключить их можно в <button type="button" class="fs-push-settings-link" id="fs-push-open-settings">настройках уведомлений</button>.</span>';
+ box.querySelector('#fs-push-open-settings').onclick=()=>fsNotifOpenSettings();
+}
 async function fsPushMount(){
  const box=document.getElementById('fs-push-settings');
  if(!box||!state.roles.includes('parent'))return;
@@ -1791,8 +1807,8 @@ async function fsPushMount(){
  const ios=fsPushIsIos(),installed=fsPushIsInstalled();
  const help=ios&&!installed
    ?'На iPhone откройте сайт в Safari, нажмите «Поделиться» → «На экран Домой», затем откройте Future School с главного экрана и включите уведомления.'
-   :'Уведомления отправляются только после вашего разрешения и сообщают о новой обратной связи без оценок и персональных замечаний.';
- box.innerHTML='<div class="fs-push-header"><div><strong>🔔 Уведомления о новых отчётах</strong><div class="fs-push-note">'+help+'</div></div><button type="button" class="btn ghost fs-push-button" id="fs-push-toggle" disabled>Проверяем…</button></div><div id="fs-push-status" class="fs-push-note" role="status"></div>';
+   :'Получайте сообщения о новых отчётах без оценок и личных данных ребёнка.';
+ box.innerHTML='<div class="fs-push-header"><div class="fs-push-heading"><span class="fs-push-heading-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span><div><strong>Уведомления о новых отчётах</strong><div class="fs-push-note">'+help+'</div></div></div><button type="button" class="btn ghost fs-push-button" id="fs-push-toggle" disabled>Проверяем…</button></div><div id="fs-push-status" class="fs-push-note" role="status"></div>';
  const button=box.querySelector('#fs-push-toggle'),status=box.querySelector('#fs-push-status');
  if(!ready){button.textContent='Не поддерживается';status.textContent='Этот браузер не поддерживает Web Push. Попробуйте актуальный Safari, Chrome или Edge.';return}
  if(ios&&!installed){button.textContent='Откройте с экрана «Домой»';status.textContent='В обычной вкладке Safari на iPhone запрос разрешения недоступен.';return}
@@ -1802,36 +1818,30 @@ async function fsPushMount(){
   if(!box.isConnected)return;
   const current=await registration.pushManager.getSubscription();
   const known=await fsRpc('fs_parent_push_manage',{p_action:'status',p_endpoint:current?.endpoint||null});
-  const enabled=!!current && known?.this_device_enabled===true && Notification.permission==='granted';
-  button.disabled=false;button.textContent=enabled?'Отключить уведомления':'Включить уведомления';
-  status.textContent=enabled?'Уведомления включены на этом устройстве.':'Вы сами решаете, разрешать ли уведомления на этом устройстве.';
+  if(!box.isConnected)return;
+  const enabled=!!current&&known?.this_device_enabled===true&&Notification.permission==='granted';
+  if(enabled){fsPushShowEnabled(box);return}
+  button.disabled=false;
+  button.textContent='Включить уведомления';
+  status.textContent='Включение требует вашего разрешения.';
   button.onclick=async()=>{
-   button.disabled=true;status.textContent='Обрабатываем настройку уведомлений…';
+   button.disabled=true;status.textContent='Подключаем уведомления…';
    try{
-    if(button.textContent==='Отключить уведомления'){
-     const sub=await registration.pushManager.getSubscription();
-     if(sub){await fsRpc('fs_parent_push_manage',{p_action:'unsubscribe',p_endpoint:sub.endpoint});await sub.unsubscribe()}
-     const cats=await fsNotifRpc({p_action:'categories'});const pref=cats.find(c=>c.id==='feedback');
-     await fsNotifRpc({p_action:'set_preference',p_category:'feedback',p_inapp:pref?.inapp!==false,p_push:false});
-     button.textContent='Включить уведомления';status.textContent='Уведомления отключены на этом устройстве.';
-    }else{
-     const permission=await Notification.requestPermission();
-     if(permission!=='granted'){button.textContent='Включить уведомления';status.textContent='Разрешение не получено. Уведомления не будут отправляться.';return}
-     let sub=await registration.pushManager.getSubscription();
-     if(!sub)sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:fsPushKeyBytes(FS_PUSH_PUBLIC_KEY)});
-     const json=sub.toJSON();
-     if(!json.keys?.p256dh||!json.keys?.auth)throw Error('Не удалось получить ключи подписки браузера');
-     await fsRpc('fs_parent_push_manage',{p_action:'subscribe',p_endpoint:sub.endpoint,p_p256dh:json.keys.p256dh,p_auth:json.keys.auth});
-     const cats=await fsNotifRpc({p_action:'categories'});const pref=cats.find(c=>c.id==='feedback');
-     await fsNotifRpc({p_action:'set_preference',p_category:'feedback',p_inapp:pref?.inapp!==false,p_push:true});
-     button.textContent='Отключить уведомления';status.textContent='Готово! Вы получите push, когда куратор опубликует новую недельную обратную связь.';
-    }
-   }catch(e){status.textContent='Не удалось изменить настройку: '+(e.message||String(e))}
-   finally{button.disabled=false}
+    const permission=await Notification.requestPermission();
+    if(permission!=='granted'){status.textContent='Разрешение не получено. Уведомления не будут отправляться.';return}
+    let sub=await registration.pushManager.getSubscription();
+    if(!sub)sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:fsPushKeyBytes(FS_PUSH_PUBLIC_KEY)});
+    const json=sub.toJSON();
+    if(!json.keys?.p256dh||!json.keys?.auth)throw Error('Не удалось получить ключи подписки браузера');
+    await fsRpc('fs_parent_push_manage',{p_action:'subscribe',p_endpoint:sub.endpoint,p_p256dh:json.keys.p256dh,p_auth:json.keys.auth});
+    const cats=await fsNotifRpc({p_action:'categories'});const pref=cats.find(c=>c.id==='feedback');
+    await fsNotifRpc({p_action:'set_preference',p_category:'feedback',p_inapp:pref?.inapp!==false,p_push:true});
+    fsPushShowEnabled(box);
+   }catch(e){if(box.isConnected)status.textContent='Не удалось подключить уведомления: '+(e.message||String(e))}
+   finally{if(button.isConnected)button.disabled=false}
   };
  }catch(e){button.textContent='Недоступно';status.textContent='Не удалось подключить push на этом устройстве: '+(e.message||String(e))}
 }
-
 async function weeklyRenderParent(){
  const root=$('#v-parent');root.innerHTML='<div class="panel">Загружаем единые недельные отчёты…</div>';
  if(!state.roles.includes('parent')){root.textContent='Нет доступа';return}
