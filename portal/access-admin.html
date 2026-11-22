@@ -17,7 +17,7 @@ input[type=search],select{width:100%;padding:12px 13px;border-radius:10px;border
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid #80674b;outline-offset:3px}
 #list{display:grid;gap:6px;max-height:650px;overflow:auto;margin-top:12px}
 .person{width:100%;background:transparent;border:1px solid transparent;padding:12px;text-align:left;border-radius:11px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.person:hover{background:var(--bg)}.person.active{background:#ede8dd;border-color:#e1d9ca}.person b{display:block;font-size:13px}.person small{font-size:11px;color:var(--muted)}
+.person:hover{background:var(--bg)}.person.active{background:#ede8dd;border-color:#e1d9ca}.person b{display:block;font-size:13px}.person small{display:block;font-size:11px;color:var(--muted);line-height:1.5;margin-top:3px;overflow-wrap:anywhere}.person>div:first-child{min-width:0;flex:1}
 .tag{background:var(--soft);border:1px solid var(--line);padding:6px 11px;border-radius:999px;font-size:11px;font-weight:700}
 .tag.dark{background:#191a19;color:#fff;border-color:#191a19}
 .row{padding:14px 0;border-bottom:1px solid var(--line);display:flex;gap:15px;align-items:center;justify-content:space-between}
@@ -69,9 +69,8 @@ select.scope{width:165px;padding:9px;font-size:12px}
     const btn=node('button',undefined,'person'+(p.id===activeId?' active':''));
     const cap=node('div');const meta=staffMeta.get(p.id)||{};
     const subjects=(meta.subjects||[]).join(', ');
-    const mentoring=(meta.classes||[]).map(x=>(x.type==='homeroom'?'Классное руководство':'Тьюторство')+' '+x.name).join(' · ');
-    cap.append(node('b',p.full_name),node('small',subjects?'Предметы: '+subjects:'Предметная нагрузка не указана'));
-    if(mentoring)cap.append(node('small',mentoring));
+    cap.append(node('b',p.full_name));
+    cap.append(node('small',subjects||'Нагрузка не указана'));
     cap.append(node('small',p.email||'Без email'));
     btn.append(cap,node('span',p.id===activeId?'Выбрано':'→','tag'));
     btn.onclick=()=>{if(busy)return;activeId=p.id;list();render(p.id)};$('list').append(btn);
@@ -158,7 +157,7 @@ function appendMentorEditor(root,id){
  block.append(node('h3','Закреплённые классы'));
  if(!assigned.length)block.append(node('p','Классы сопровождения пока не назначены.'));
  for(const x of assigned){
-  const r=node('div',undefined,'row');r.append(node('div',undefined,(x.type==='tutor'?'Тьютор / куратор':'Классный руководитель')+' · '+x.name));
+  const r=node('div',undefined,'row');r.append(node('div',undefined,(x.type==='tutor'?'Тьютор / куратор':'Классное руководство')+' · '+x.name+' класс'));
   const remove=node('button','Снять назначение','tag');remove.type='button';
   remove.onclick=async()=>{
    if(!confirm('Снять закрепление '+x.name+' у этого сотрудника? Доступ к классу будет прекращён.'))return;
