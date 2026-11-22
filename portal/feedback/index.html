@@ -370,6 +370,20 @@ header{box-shadow:0 2px 16px #00000005}
 @media(max-width:680px){
  .fs-notif-popover{position:fixed;top:auto;right:auto;left:auto;width:auto;max-height:70dvh}
 }
+
+/* Keep header/footer visible: only the notification list scrolls, with up to five items in view. */
+.fs-notif-popover{display:flex;flex-direction:column;overflow:hidden!important}
+.fs-notif-popover-head{flex:0 0 auto}
+.fs-notif-list-scroll{flex:0 1 auto;min-height:0;max-height:min(375px,45dvh);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.fs-notif-list-scroll:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.fs-notif-popover>.fs-notif-actions{flex:0 0 auto}
+.fs-notif-actions-clear{justify-content:flex-end;margin-top:5px}
+.fs-notif-actions-clear .btn{font-size:13px;padding:6px 10px}
+.fs-notif-actions button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:680px){
+ .fs-notif-list-scroll{max-height:min(375px,40dvh)}
+ .fs-notif-actions-clear .btn{min-height:40px}
+}
 </style>
 
 <header><div class="wrap hrow">
@@ -599,7 +613,7 @@ async function fsNotifLoad(){
  if(!state.user||fsNotifLoading)return;
  fsNotifLoading=true;
  try{
-  const response=await fsNotifRpc({p_action:'list',p_limit:60});
+  const response=await fsNotifRpc({p_action:'list',p_limit:100});
   fsNotifItems=Array.isArray(response?.items)?response.items:[];
   fsNotifUnread=Number(response?.unread||0);
   fsNotifRenderBell();
@@ -625,6 +639,20 @@ async function fsNotifOpenItem(id){
 }
 function fsNotifWireItems(host){host.querySelectorAll('[data-notif-id]').forEach(b=>b.onclick=()=>fsNotifOpenItem(b.dataset.notifId))}
 async function fsNotifMarkAll(){try{await fsNotifRpc({p_action:'mark_all'});await fsNotifLoad()}catch(e){alert('Не удалось отметить прочитанным: '+e.message)}}
+let fsNotifClearing=false;
+async function fsNotifClearAll(){
+ if(fsNotifClearing||!fsNotifItems.length)return;
+ if(!confirm('Очистить весь ваш список уведомлений? Это не удалит отчёты и не затронет уведомления других пользователей.'))return;
+ fsNotifClearing=true;
+ try{
+  await fsNotifRpc({p_action:'clear_all'});
+  fsNotifItems=[];fsNotifUnread=0;fsNotifRenderBell();
+  if(!$('#fs-notif-popover').hidden)fsNotifRenderPopover();
+  if(!$('#fs-notif-modal').hidden&&fsNotifView==='list')fsNotifRenderAll();
+  await fsNotifLoad();
+ }catch(e){alert('Не удалось очистить уведомления: '+e.message)}
+ finally{fsNotifClearing=false}
+}
 
 function fsNotifPositionPopover(){
  const pop=$('#fs-notif-popover'),bell=$('#fs-notif-bell');
@@ -654,25 +682,29 @@ function fsNotifPositionPopover(){
 
 function fsNotifRenderPopover(){
  const host=$('#fs-notif-popover');
- const newest=fsNotifItems.filter(n=>!n.read_at).slice(0,5);
- const selected=newest.length?newest:fsNotifItems.slice(0,5);
+ const previousScroll=host.querySelector('.fs-notif-list-scroll')?.scrollTop||0;
+ const selected=fsNotifItems;
  host.innerHTML='<div class="fs-notif-popover-head"><strong>Уведомления</strong><button type="button" class="btn ghost" id="fs-notif-allread">Прочитать все</button></div>'+
- (selected.map(fsNotifItemHtml).join('')||'<p class="note">Новых уведомлений пока нет.</p>')+
- '<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-seeall">Все уведомления</button><button class="btn ghost" id="fs-notif-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки</button></div>';
+ '<div class="fs-notif-list-scroll" tabindex="0" aria-label="Список уведомлений; прокрутите для просмотра остальных">'+(selected.map(fsNotifItemHtml).join('')||'<p class="note">Уведомлений пока нет.</p>')+'</div>'+
+ '<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-seeall">Все уведомления</button><button class="btn ghost" id="fs-notif-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки</button></div>'+
+ '<div class="fs-notif-actions fs-notif-actions-clear"><button class="btn ghost" type="button" id="fs-notif-clear" '+(selected.length?'':'disabled')+'>Очистить</button></div>';
+ const scroll=host.querySelector('.fs-notif-list-scroll');scroll.scrollTop=previousScroll;
  fsNotifWireItems(host);
  host.querySelector('#fs-notif-allread').onclick=fsNotifMarkAll;
  host.querySelector('#fs-notif-seeall').onclick=()=>{fsNotifView='list';fsNotifSetModal(true);fsNotifRenderAll()};
  host.querySelector('#fs-notif-settings').onclick=()=>fsNotifOpenSettings();
+ host.querySelector('#fs-notif-clear').onclick=fsNotifClearAll;
  fsNotifPositionPopover();
 }
 function fsNotifRenderAll(){
  fsNotifView='list';$('#fs-notif-modal-title').textContent='Все уведомления';
  const host=$('#fs-notif-modal-content');
- host.innerHTML='<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-modal-read">Прочитать все</button><button class="btn ghost" id="fs-notif-modal-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки уведомлений</button></div>'+
+ host.innerHTML='<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-modal-read">Прочитать все</button><button class="btn ghost" id="fs-notif-modal-settings"><span class="fs-notif-gear"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.06 2.06-.06-.06A1.7 1.7 0 0 0 15.8 18.6 1.7 1.7 0 0 0 14.6 20.2V21h-5.2v-.8a1.7 1.7 0 0 0-1.2-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.06-2.06.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1.2H2v-3.6h1a1.7 1.7 0 0 0 1.6-1.2 1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.26 5l.06.06A1.7 1.7 0 0 0 8.2 5.4a1.7 1.7 0 0 0 1.2-1.6V3h5.2v.8a1.7 1.7 0 0 0 1.2 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.06 2.06-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.6 1.2h1v3.6h-1a1.7 1.7 0 0 0-1.6 1.2Z"/></svg></span>Настройки уведомлений</button><button class="btn ghost" id="fs-notif-modal-clear" '+(fsNotifItems.length?'':'disabled')+'>Очистить</button></div>'+
  (fsNotifItems.map(fsNotifItemHtml).join('')||'<p class="note">Уведомлений пока нет.</p>');
  fsNotifWireItems(host);
  host.querySelector('#fs-notif-modal-read').onclick=fsNotifMarkAll;
  host.querySelector('#fs-notif-modal-settings').onclick=fsNotifOpenSettings;
+ host.querySelector('#fs-notif-modal-clear').onclick=fsNotifClearAll;
 }
 async function fsNotifSetParentPush(enabled){
  if(!state.roles.includes('parent'))throw Error('Для этой роли push пока не подключён');
