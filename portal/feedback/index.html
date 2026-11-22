@@ -1,4 +1,5 @@
 <title>Обратная связь AFS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#253c56">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -294,6 +295,72 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-channel-choices[open]>summary{border-bottom:1px solid var(--line)}
 .fs-channel-choices>p,.fs-channel-choices>#fs-channel-body{margin:12px}
 .fs-channel-choices input[type=checkbox]{width:18px;height:18px}
+
+/* Phone-first parent experience: readable text, touch targets and responsive report viewer. */
+@media (max-width:680px){
+ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+ body{margin:0;font-size:16px;line-height:1.55}
+ .wrap{width:100%;max-width:100%;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
+ .hrow{gap:10px;padding-block:12px;align-items:center}
+ .brand{flex:1 1 100%;margin-right:0}
+ .brand b{font-size:18px;line-height:1.35}
+ .brand span{font-size:14px}
+ .brand a{font-size:14px!important}
+ .who{flex:1 1 100%;min-width:0;justify-content:space-between;flex-wrap:wrap;gap:9px;font-size:14px}
+ #me{min-width:0;overflow-wrap:anywhere}
+ .fs-notif-bell{width:46px;height:46px;flex-shrink:0}
+ .tabs{flex:1 1 100%;width:100%;max-width:100%;border-radius:12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+ .tabs button{flex:0 0 auto;min-height:44px;padding:11px 14px;font-size:15px;white-space:nowrap}
+ main{padding-block:16px 40px}
+ .panel{padding:16px;border-radius:14px}
+ h2{font-size:18px;line-height:1.4}
+ .note,.empty{font-size:15px;line-height:1.55}
+ .btn,.chipbtn{min-height:44px;font-size:16px;padding:11px 15px;justify-content:center}
+ .pill{font-size:13px;line-height:1.4;padding:5px 10px;white-space:normal}
+ label{font-size:15px;line-height:1.4}
+ input,select,textarea{font-size:16px;min-height:44px;padding:11px 12px;max-width:100%}
+ textarea{min-height:100px}
+ #v-parent>.panel{padding:18px 15px 22px}
+ #v-parent h2{font-size:20px;margin-bottom:13px}
+ #v-parent .fs-week-student-switch{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin:16px 0}
+ #v-parent .fs-week-student-switch .btn{width:100%;justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere;line-height:1.4;min-height:52px}
+ #fs-parent-reports .fs-week-row{padding:16px!important;border-radius:14px;margin:14px 0}
+ #fs-parent-reports .fs-week-actions:first-child{gap:12px}
+ #fs-parent-reports .fs-week-actions:first-child>div{font-size:16px;line-height:1.45;overflow-wrap:anywhere}
+ #fs-parent-reports .fs-week-actions:last-child{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ #fs-parent-reports .fs-week-actions:last-child .btn{width:100%;white-space:normal;line-height:1.35}
+ #v-parent .fs-push-settings{padding:14px}
+ .fs-push-heading{gap:12px}
+ .fs-push-heading strong{font-size:16px;line-height:1.4}
+ .fs-push-note,.fs-push-settings-enabled{font-size:14px;line-height:1.5}
+ .fs-push-header{gap:12px}
+ .fs-push-button{white-space:normal;width:100%}
+ .fs-push-settings-enabled{padding:10px 0}
+ .fs-push-settings-link{font-size:inherit;min-height:36px;display:inline}
+ .fs-week-modal{padding:8px;align-items:flex-start}
+ .fs-week-dialog{width:100%;max-width:100%;padding:15px;border-radius:14px;margin:0}
+ .fs-week-paper{padding:17px 14px;font-size:16px;line-height:1.6;max-width:100%;margin:12px 0;overflow-wrap:anywhere}
+ .fs-week-paper h2{font-size:20px;line-height:1.35}
+ .fs-week-paper h3{font-size:18px;line-height:1.4}
+ .fs-week-paper .fs-field{font-size:16px;line-height:1.6;padding:13px}
+ .fs-week-actions{gap:10px}
+ .fs-week-actions>.btn{min-height:44px}
+ .fs-notif-popover{position:fixed;left:10px;right:10px;top:auto;width:auto;max-width:none;max-height:65dvh;overflow:auto;z-index:1200}
+ .fs-notif-item{padding:14px 10px;min-height:54px}
+ .fs-notif-item strong{font-size:15px}
+ .fs-notif-item .fs-notif-body{font-size:14px}
+ .fs-notif-item time{font-size:13px}
+ .fs-notif-actions .btn{min-height:44px}
+ .fs-notif-modal{padding:max(12px,env(safe-area-inset-top,0px)) 10px max(12px,env(safe-area-inset-bottom,0px))}
+ .fs-notif-dialog{width:100%;max-height:calc(100dvh - 32px);margin:0;padding:18px 14px;border-radius:14px}
+ .fs-notif-settings-row{grid-template-columns:minmax(0,1fr) 64px 64px;gap:7px;padding:15px 0;font-size:14px}
+ .fs-notif-settings-row small{font-size:12px;line-height:1.4}
+ .fs-notif-settings-row input{width:22px;height:22px;min-height:22px}
+}
+@media (max-width:390px){
+ #fs-parent-reports .fs-week-actions:last-child{grid-template-columns:minmax(0,1fr)}
+ .fs-notif-settings-row{grid-template-columns:minmax(0,1fr) 51px 51px}
+}
 </style>
 
 <header><div class="wrap hrow">
