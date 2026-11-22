@@ -426,10 +426,11 @@ async function loadData(){
     $('#tab-'+section).setAttribute('aria-selected',String(section===state.tab));
   }
   render();
+  fsSyncWeekWithServer();
   fsNotifStart();
 }
 async function enter(session){
-  if(!session){fsNotifStop();state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
+  if(!session){fsNotifStop();fsWeekSelectedDate=null;fsWeekManuallySelected=false;state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
   state.user=session.user; setLogin(true);
   try{await loadData();await fsHandleCaptureLink()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
@@ -635,7 +636,7 @@ function renderList(){
   const visibleClasses=allClasses?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id));
   $('#classbar').innerHTML=visibleClasses.map(c=>`<button type="button" class="chipbtn" data-class="${c.id}" aria-pressed="${c.id===state.selectedClass}">${esc(c.name)}</button>`).join('');
   $('#slist').innerHTML=classStudents().map(s=>`<button type="button" class="srow" data-student="${s.id}" aria-current="${s.id===state.selectedStudent}"><span class="n">${esc(s.full_name)}</span><span class="pill" data-week-status="${s.id}">Новый</span></button>`).join('')||'<div class="empty">В этом классе пока нет учеников.</div>';
-  const currentClass=state.selectedClass,currentWeek=fsWeekSelectedDate||fsMonday();
+  const currentClass=state.selectedClass,currentWeek=fsWeekSelectedDate||fsWeekDefault();
   if(currentClass)fsRpc('fs_weekly_own_status',{p_class_id:currentClass,p_week_start:currentWeek}).then(rows=>{if(currentClass!==state.selectedClass||state.tab!=='send')return;for(const row of rows||[]){const badge=document.querySelector('[data-week-status="'+row.student_id+'"]');if(badge){badge.textContent=row.submitted?'Передано: '+row.submitted:row.draft?'Черновик: '+row.draft:'Новый';badge.className='pill '+(row.submitted?'ok':'')}}}).catch(e=>console.warn('Статусы черновиков:',e));
   document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.selectedClass=Number(b.dataset.class);state.selectedStudent=null;render()});
   document.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>{state.selectedStudent=Number(b.dataset.student);render()});
@@ -1557,9 +1558,62 @@ let fsWeekSelectedDate=null;
 let fsWeekSelectedSubject=null;
 let fsWeekDraftTimer=null;
 let fsWeekEditingKey=null;
+// 2026–2027: 8 + 8 + 10 + 8 study weeks; holiday weeks are not numbered.
+const FS_SCHOOL_WEEKS=(()=>{
+ const quarters=[['2026-08-31',8],['2026-11-02',8],['2027-01-11',10],['2027-03-29',8]];
+ const weeks=[];let number=0;
+ for(const [first,count] of quarters){
+  const base=new Date(first+'T00:00:00Z');
+  for(let i=0;i<count;i++){
+   const monday=new Date(base);monday.setUTCDate(monday.getUTCDate()+7*i);
+   const friday=new Date(monday);friday.setUTCDate(friday.getUTCDate()+4);
+   number++;
+   weeks.push({number,value:monday.toISOString().slice(0,10),
+     begin:number===1?'2026-09-01':monday.toISOString().slice(0,10),
+     end:number===34?'2027-05-25':friday.toISOString().slice(0,10)});
+  }
+ }
+ return weeks;
+})();
 function fsMonday(d=new Date()){const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7));return x.toISOString().slice(0,10)}
-function fsWeekLabel(start){const first=new Date('2026-09-07T00:00:00Z'),d=new Date(start+'T00:00:00Z'),num=Math.round((d-first)/604800000)+1,finish=new Date(d);finish.setUTCDate(finish.getUTCDate()+4);const sameMonth=d.getUTCMonth()===finish.getUTCMonth()&&d.getUTCFullYear()===finish.getUTCFullYear();const period=sameMonth?d.getUTCDate()+'–'+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}):d.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'})+' – '+finish.toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'});return 'Неделя '+num+' ('+period+' г.)'}
-function fsWeekOptions(selected){const now=new Date(fsMonday()),out=[];for(let i=0;i<18;i++){const d=new Date(now);d.setUTCDate(d.getUTCDate()-7*i);const v=d.toISOString().slice(0,10);out.push('<option value="'+v+'" '+(selected===v?'selected':'')+'>'+esc(fsWeekLabel(v))+'</option>')}return out.join('')}
+function fsSchoolLocalDate(){
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',year:'numeric'}).formatToParts(new Date());
+ const obj=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+ return obj.year+'-'+obj.month+'-'+obj.day;
+}
+function fsFindWeek(day){
+ let current=FS_SCHOOL_WEEKS[0];
+ for(const week of FS_SCHOOL_WEEKS){if(day>=week.begin)current=week;else break}
+ return current;
+}
+function fsWeekDefault(){return fsFindWeek(fsSchoolLocalDate()).value}
+let fsWeekManuallySelected=false;
+async function fsSyncWeekWithServer(){
+ try{
+  const today=await fsRpc('fs_school_current_date');
+  if(!state.user||fsWeekManuallySelected||!today)return;
+  const desired=fsFindWeek(String(today)).value;
+  if(desired===fsWeekSelectedDate)return;
+  fsWeekSelectedDate=desired;
+  if(state.tab==='weekly')renderWeeklyCurator();
+  else if(state.tab==='send'){renderList();renderComposer()}
+ }catch(error){console.warn('Дата учебной недели:',error)}
+}
+function fsFormatWeekDay(date){
+ return new Date(date+'T00:00:00Z').toLocaleDateString('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'});
+}
+function fsWeekLabel(start){
+ const week=FS_SCHOOL_WEEKS.find(w=>w.value===start||w.begin===start);
+ if(!week)return 'Неделя от '+fsFormatWeekDay(start);
+ const first=new Date(week.begin+'T00:00:00Z'),last=new Date(week.end+'T00:00:00Z');
+ const sameMonth=first.getUTCMonth()===last.getUTCMonth()&&first.getUTCFullYear()===last.getUTCFullYear();
+ const dates=sameMonth?first.getUTCDate()+'–'+fsFormatWeekDay(week.end):fsFormatWeekDay(week.begin)+' – '+fsFormatWeekDay(week.end);
+ return 'Неделя '+week.number+' ('+dates+')';
+}
+function fsWeekOptions(selected){
+ const current=fsWeekDefault();
+ return FS_SCHOOL_WEEKS.map(w=>'<option value="'+w.value+'" '+(selected===w.value?'selected':'')+'>'+esc(fsWeekLabel(w.value))+(w.value===current?' · текущая':'')+'</option>').join('');
+}
 async function fsRpc(name,params={}){const r=await supabase.rpc(name,params);if(r.error)throw Error(msg(r.error));return r.data}
 function fsHtmlDoc(report,studentName,className){
 const parts=Array.isArray(report.sections)?report.sections:[];
@@ -1598,7 +1652,7 @@ function weeklyRenderComposer(){
  if(!student){host.innerHTML='<div class="empty">Выберите ученика, чтобы открыть черновик предметной обратной связи.</div>';return}
  const subjects=ownSubjects();
  if(!subjects.length){host.innerHTML='<div class="empty">Для этого класса у вас не назначено предметов.</div>';return}
- if(!fsWeekSelectedDate)fsWeekSelectedDate=fsMonday();
+ if(!fsWeekSelectedDate)fsWeekSelectedDate=fsWeekDefault();
  if(!subjects.some(s=>s.id===fsWeekSelectedSubject))fsWeekSelectedSubject=subjects[0].id;
  host.innerHTML='<div class="compose"><div class="chead"><div><div class="t">'+esc(student.full_name)+'</div><div class="s">'+esc(state.classes.find(c=>c.id===student.class_id)?.name||'')+'</div></div></div>'+
  '<div class="fs-week-grid"><label>Учебная неделя<select id="fs-draft-week">'+fsWeekOptions(fsWeekSelectedDate)+'</select></label><label>Предмет<select id="fs-draft-subject">'+subjects.map(x=>'<option value="'+x.id+'" '+(x.id===fsWeekSelectedSubject?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></label></div>'+
@@ -1632,7 +1686,7 @@ function weeklyRenderComposer(){
   finally{working=false}
  };
  const change=async(type,value)=>{clearTimeout(fsWeekDraftTimer);if(!loading&&status==='draft'){const success=await save();if(!success){notice.textContent+=' Измените выбор после успешного сохранения.';return;}}
-  if(type==='week')fsWeekSelectedDate=value;else fsWeekSelectedSubject=Number(value);weeklyRenderComposer();};
+  if(type==='week'){fsWeekSelectedDate=value;fsWeekManuallySelected=true;}else fsWeekSelectedSubject=Number(value);weeklyRenderComposer();};
  host.querySelector('#fs-draft-week').onchange=e=>change('week',e.target.value);
  host.querySelector('#fs-draft-subject').onchange=e=>change('subject',e.target.value);
  inputs.forEach(x=>x.oninput=()=>{if(loading||status!=='draft')return;notice.textContent='Есть несохранённые изменения…';clearTimeout(fsWeekDraftTimer);fsWeekDraftTimer=setTimeout(()=>save(),1800)});
@@ -1668,11 +1722,11 @@ function renderWeeklyCurator(){
  const isAdmin=state.roles.some(r=>['superadmin','deputy','director'].includes(r));
  const classes=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
  if(!classes.length){root.innerHTML='<div class="panel">Для вашего аккаунта не назначен класс кураторства.</div>';return}
- if(!fsWeekSelectedDate)fsWeekSelectedDate=fsMonday();
+ if(!fsWeekSelectedDate)fsWeekSelectedDate=fsWeekDefault();
  if(!classes.some(c=>c.id===state.selectedClass))state.selectedClass=classes[0].id;
  root.innerHTML='<div class="panel"><h2>Отправка родителям · единый недельный отчёт</h2><p class="note">Предметники передают отдельные отзывы сюда. Родитель получает один отчёт со всеми предметами после публикации куратором.</p><div class="fs-week-grid"><label>Класс<select id="fs-curator-class">'+classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.selectedClass?'selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select></label><label>Неделя<select id="fs-curator-week">'+fsWeekOptions(fsWeekSelectedDate)+'</select></label></div><div id="fs-curator-rows" class="note" style="margin-top:15px">Загружаем отзывы предметников…</div></div>';
  root.querySelector('#fs-curator-class').onchange=e=>{state.selectedClass=Number(e.target.value);renderWeeklyCurator()};
- root.querySelector('#fs-curator-week').onchange=e=>{fsWeekSelectedDate=e.target.value;renderWeeklyCurator()};
+ root.querySelector('#fs-curator-week').onchange=e=>{fsWeekManuallySelected=true;fsWeekSelectedDate=e.target.value;renderWeeklyCurator()};
  const className=classes.find(c=>c.id===state.selectedClass)?.name||'';
  const selectedClass=state.selectedClass,selectedWeek=fsWeekSelectedDate;
  (async()=>{
