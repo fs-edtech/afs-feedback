@@ -1309,7 +1309,7 @@ function afsWireStaffManager(d){
   });
   async function massIssue(mode){
     const eligible=d.staff.filter(x=>x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r)));
-    const homeroom=new Set(d.assignments.filter(a=>a.assignment_type==='homeroom').map(a=>a.user_id));
+    const homeroom=new Set(d.assignments.filter(a=>['homeroom','tutor'].includes(a.assignment_type)).map(a=>a.user_id));
     const chosen=mode==='homeroom'?eligible.filter(x=>homeroom.has(x.id)):eligible;
     if(!chosen.length){status.textContent='Подходящие сотрудники не найдены';return;}
     if(!confirm('Вы действительно хотите установить НОВЫЕ временные пароли для '+chosen.length+' сотрудников? Их прежние пароли перестанут работать. После этого CSV с новыми паролями будет загружен на ваш компьютер.'))return;
@@ -1554,7 +1554,7 @@ async function renderManage(){
     <div class="tw"><table><thead><tr><th>ФИО</th><th>Логин (email)</th><th>Роли</th><th>Назначения</th><th>Временный пароль</th><th></th></tr></thead><tbody>
     ${d.staff.map(x=>`<tr><td><b>${esc(x.full_name)}</b></td><td><span class="afs-login">${esc(x.email||'—')}</span><button type="button" class="afs-copy" data-staff-copy-login="${esc(x.id)}" title="Скопировать логин">Копировать</button></td><td>${esc((x.roles||[]).join(', '))}</td><td>${esc(d.assignments.filter(a=>a.user_id===x.id).map(a=>{
       const cl=d.classes.find(c=>c.id===a.class_id)?.name||'?';const sub=d.subjects.find(z=>z.id===a.subject_id)?.name||'';
-      return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':sub);
+      return cl+' · '+(a.assignment_type==='homeroom'?'Классный руководитель':a.assignment_type==='tutor'?'Тьютор / куратор':sub);
     }).join('; ')||'—')}</td>
     <td class="afs-credential-cell">${staffTemporaryCredentials.has(x.id)?`<code>${esc(staffTemporaryCredentials.get(x.id))}</code><button type="button" class="afs-copy" data-staff-copy-password="${esc(x.id)}">Копировать</button>`:'<span class="note">Не выдавался в этой сессии</span>'}
     ${state.roles.includes('superadmin')&&x.roles?.includes('teacher')&&!x.roles?.some(r=>['superadmin','deputy','director'].includes(r))?`<button type="button" class="afs-issue-button" data-staff-issue="${esc(x.id)}">Выдать новый</button>`:''}</td>
@@ -1777,7 +1777,7 @@ function weeklyRenderComposer(){
 function renderWeeklyCurator(){
  const root=$('#v-weekly');if(!root)return;
  const isAdmin=state.roles.some(r=>['superadmin','deputy','director'].includes(r));
- const classes=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&a.assignment_type==='homeroom'));
+ const classes=isAdmin?state.classes:state.classes.filter(c=>state.assignments.some(a=>a.class_id===c.id&&['homeroom','tutor'].includes(a.assignment_type)));
  if(!classes.length){root.innerHTML='<div class="panel">Для вашего аккаунта не назначен класс кураторства.</div>';return}
  if(!fsWeekSelectedDate)fsWeekSelectedDate=fsWeekDefault();
  if(!classes.some(c=>c.id===state.selectedClass))state.selectedClass=classes[0].id;
