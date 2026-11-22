@@ -88,9 +88,18 @@ async function show(session){
 }
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('loginBtn');btn.disabled=true;$('loginError').textContent='';try{
  const input=$('username').value.trim(), pw=$('password').value;
- const ph=/^[+()\d\s-]{10,20}$/.test(input)?phone(input):null;
- const credentials=ph?{phone:ph,password:pw}:{email:input,password:pw};
- const {data,error}=await client.auth.signInWithPassword(credentials);
+ const digits=input.replace(/[^0-9]/g,'');
+ const isPhone=/^(?:[78][0-9]{10}|[0-9]{10})$/.test(digits);
+ let email=input;
+ if(isPhone){
+  const normalized=phone(input);
+  if(!normalized)throw Error('Некорректный номер телефона');
+  const {data:alias,error:lookupError}=await client.rpc('fs_parent_login_alias',{p_phone:normalized});
+  if(lookupError)throw lookupError;
+  if(!alias)throw Error('Неверный телефон или пароль');
+  email=alias;
+ }
+ const {data,error}=await client.auth.signInWithPassword({email,password:pw});
  if(error)throw error;await show(data.session);
  }catch(e){$('loginError').textContent=e.message||'Ошибка входа'}finally{btn.disabled=false}});
 $('logoutBtn').onclick=async()=>{await client.auth.signOut();await show(null)};
