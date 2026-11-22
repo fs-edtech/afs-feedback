@@ -8,13 +8,16 @@ const css=`
 .fsn-bell:focus-visible{outline:2px solid #527da9;outline-offset:2px}
 .fsn-badge[hidden],.fsn-pop[hidden]{display:none!important}
 .fsn-badge{position:absolute;top:-7px;right:-8px;display:flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:99px;background:#b33c42;color:#fff;font-size:10px;font-weight:800;line-height:1;border:2px solid var(--surface,#fff)}
-.fsn-pop{position:absolute;right:0;top:calc(100% + 9px);z-index:1200;width:min(370px,calc(100vw - 20px));max-height:70vh;overflow:auto;border-radius:15px;background:var(--surface,#fff);box-shadow:0 12px 36px #10182835;border:1px solid var(--line,#e7e4dc);padding:12px;color:var(--text,var(--ink,#20252d))}
+ .fsn-pop{position:absolute;right:0;top:calc(100% + 9px);z-index:1200;width:min(370px,calc(100vw - 20px));max-height:70vh;overflow:hidden;display:flex;flex-direction:column;border-radius:15px;background:var(--surface,#fff);box-shadow:0 12px 36px #10182835;border:1px solid var(--line,#e7e4dc);padding:12px;color:var(--text,var(--ink,#20252d))}
+ .fsn-scroll{flex:0 1 auto;min-height:0;max-height:min(375px,45dvh);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
 .fsn-item{display:block;width:100%;text-align:left;padding:12px 10px;border:0;border-bottom:1px solid var(--line,#e7e4dc);background:transparent;color:inherit;cursor:pointer;border-radius:6px}
 .fsn-item:hover,.fsn-item.unread{background:var(--surface-secondary,#f2f3f5)}
 .fsn-item strong{font-size:13px;display:block}.fsn-item small{display:block;color:var(--muted,#737373);font-size:12px;line-height:1.5;margin-top:4px}
 .fsn-tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;margin-top:10px}
 .fsn-tools button{background:transparent;border:1px solid var(--line,#e7e4dc);border-radius:10px;padding:8px 10px;cursor:pointer;font-size:12px;color:var(--text,var(--ink,#272727))}
 .fsn-tools button:hover{background:var(--surface-secondary,#f2f3f5)}
+.fsn-tools button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:680px){.fsn-scroll{max-height:min(375px,40dvh)}}
 .fsn-overlay{position:fixed;inset:0;z-index:20000;background:rgba(17,25,40,.55);display:flex;justify-content:center;align-items:flex-start;padding:6vh 12px;overflow:auto}
 .fsn-dialog{width:min(680px,100%);background:var(--surface,#fff);color:var(--text,var(--ink,#202020));border-radius:18px;padding:20px;max-height:88vh;overflow:auto}
 .fsn-header{display:flex;justify-content:space-between;align-items:center;gap:12px}
@@ -42,8 +45,35 @@ function row(n){const b=el('button','fsn-item'+(n.read_at?'':' unread'));b.type=
 b.onclick=async()=>{try{await mark(n)}catch{}hide();location.assign(n.link&&n.link.startsWith('/')&&!n.link.startsWith('//')?n.link:'/feedback/')};return b}
 async function markAll(){try{await rpc({p_action:'mark_all'});await load()}catch(e){alert('Ошибка уведомлений: '+e.message)}}
 function hide(){pop.hidden=true;popOpen=false;bell.setAttribute('aria-expanded','false')}
-function controls(container,full){const tools=el('div','fsn-tools');tools.append(button('Прочитать все',markAll),button('Настройки',settings));if(!full)tools.append(button('Все уведомления',()=>all()));container.append(tools)}
-function drawPop(){pop.replaceChildren(heading(pop,'Уведомления'));let shown=items.filter(n=>!n.read_at).slice(0,5);if(!shown.length)shown=items.slice(0,5);if(!shown.length)pop.append(el('p','', 'Новых уведомлений нет'));else shown.forEach(n=>pop.append(row(n)));controls(pop,false)}
+let clearing=false;
+async function clearAll(){
+ if(clearing||!items.length)return;
+ if(!confirm('Очистить весь ваш список уведомлений? Это не удалит отчёты или уведомления других пользователей.'))return;
+ clearing=true;
+ try{
+  await rpc({p_action:'clear_all'});
+  items=[];unread=0;setBadge();
+  if(popOpen)drawPop();
+  if(overlay&&view==='list')all();
+  await load();
+ }catch(e){alert('Не удалось очистить уведомления: '+e.message)}
+ finally{clearing=false}
+}
+function controls(container,full){
+ const tools=el('div','fsn-tools');
+ tools.append(button('Прочитать все',markAll),button('Настройки',settings));
+ if(!full)tools.append(button('Все уведомления',()=>all()));
+ const clear=button('Очистить',clearAll);clear.disabled=!items.length;tools.append(clear);
+ container.append(tools);
+}
+function drawPop(){
+ const scrollTop=pop.querySelector('.fsn-scroll')?.scrollTop||0;
+ pop.replaceChildren(heading(pop,'Уведомления'));
+ const list=el('div','fsn-scroll');list.tabIndex=0;list.setAttribute('aria-label','Уведомления, прокрутите для просмотра остальных');
+ if(!items.length)list.append(el('p','','Уведомлений пока нет'));
+ else items.forEach(n=>list.append(row(n)));
+ pop.append(list);controls(pop,false);list.scrollTop=scrollTop;
+}
 function showModal(title){hide();if(overlay)overlay.remove();overlay=el('div','fsn-overlay');const dialog=el('div','fsn-dialog');const h=heading(dialog,title);h.append(button('Закрыть ✕',()=>overlay.remove()));dialog.append(h);overlay.append(dialog);document.body.append(overlay);overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};return dialog}
 function all(){view='list';const d=showModal('Все уведомления');controls(d,true);if(!items.length)d.append(el('p','','Уведомлений пока нет'));items.forEach(n=>d.append(row(n)))}
 async function settings(){
@@ -58,7 +88,7 @@ async function settings(){
  d.append(el('p','','Для включения push на конкретном устройстве откройте «Обратная связь» → колокольчик → «Настройки».'));
  }catch(e){d.append(el('p','','Не удалось загрузить настройки: '+e.message))}
 }
-async function load(){if(stopped)return;try{const d=await rpc({p_action:'list',p_limit:60});if(stopped)return;items=d.items||[];unread=d.unread||0;setBadge();if(popOpen)drawPop()}catch(e){console.warn('Future School notifications:',e.message)}}
+async function load(){if(stopped)return;try{const d=await rpc({p_action:'list',p_limit:100});if(stopped)return;items=d.items||[];unread=d.unread||0;setBadge();if(popOpen)drawPop()}catch(e){console.warn('Future School notifications:',e.message)}}
 bell.onclick=()=>{popOpen=!popOpen;pop.hidden=!popOpen;bell.setAttribute('aria-expanded',String(popOpen));if(popOpen){drawPop();load()}};
 const onDoc=e=>{if(!host.contains(e.target))hide()};
 document.addEventListener('click',onDoc);
