@@ -268,6 +268,18 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-notif-settings-row input{justify-self:center;width:18px;height:18px}
 .fs-notif-settings-row small{display:block;color:var(--muted);margin-top:3px;font-size:11px}
 @media(max-width:480px){.fs-notif-popover{right:-75px}.fs-notif-dialog{padding:14px}.fs-notif-settings-row{grid-template-columns:minmax(0,1fr) 58px 58px}}
+.fs-fold-panel{padding:0!important;overflow:visible}
+.fs-fold-panel>summary{cursor:pointer;list-style:none;display:flex;gap:11px;align-items:center;padding:16px 18px;color:var(--fg)}
+.fs-fold-panel>summary::-webkit-details-marker{display:none}
+.fs-fold-panel>summary::before{content:'▸';font-weight:700;font-size:17px;color:var(--muted)}
+.fs-fold-panel[open]>summary::before{content:'▾'}
+.fs-fold-panel[open]>summary{border-bottom:1px solid var(--line)}
+.fs-fold-hint{margin-left:auto;font-size:12px}
+.fs-fold-content,.fs-fold-panel>#afs-push-inner{padding:16px}
+.fs-panel-icon{display:inline-flex;align-items:center;justify-content:center;color:var(--fg)}
+.fs-students-fold .slist{max-height:56vh;overflow-y:auto}
+.fs-students-fold .classbar{margin-bottom:10px}
+@media(max-width:700px){.fs-fold-panel>summary{padding:12px}.fs-fold-content,.fs-fold-panel>#afs-push-inner{padding:10px}}
 </style>
 
 <header><div class="wrap hrow">
@@ -302,11 +314,7 @@ header{box-shadow:0 2px 16px #00000005}
 </section>
 <main class="wrap" id="app-main" hidden>
   <section id="v-send" class="send">
-    <div class="panel">
-      <h2>Ученики класса</h2>
-      <div class="classbar" id="classbar"></div>
-      <div class="slist" id="slist"><div class="empty">Загружаем список учеников…</div></div>
-    </div>
+    <details class="panel fs-fold-panel fs-students-fold"><summary><strong>Ученики класса</strong><span class="note fs-fold-hint">Выбрать класс и ученика</span></summary><div class="fs-fold-content"><div class="classbar" id="classbar"></div><div class="slist" id="slist"><div class="empty">Загружаем список учеников…</div></div></div></details>
     <div class="panel" id="composer"><div class="empty">Выберите ученика слева — откроется форма сообщения по методу «бургер».</div></div>
   </section>
   <section id="v-weekly" hidden></section>
@@ -935,17 +943,18 @@ async function renderClassParentEditorReload(classId,root,oldHost){
 async function fsRenderPushAdmin(panelRoot,classId,isAdmin){
  const container=panelRoot.querySelector('#afs-push-overview');
  if(!container)return;
- container.innerHTML='<h2>🔔 Push-уведомления родителей</h2>'+
+ const inner=container.querySelector('#afs-push-inner');
+ inner.innerHTML='<p class="note">Подключения и доставка</p>'+
  '<p class="note">Подписка означает, что хотя бы одно устройство родителя разрешило уведомления. «Принято push-сервисом» не означает, что человек увидел сообщение — ознакомление проверяется отдельно.</p>'+
  '<div class="fs-week-actions"><label style="min-width:180px">Отчёт по классу<select id="fs-push-scope">'+
  (isAdmin?'<option value="all">Все классы</option>':'')+
  '<option value="class">Текущий класс</option></select></label>'+
  '<button class="btn ghost" type="button" id="fs-push-refresh">Обновить</button></div>'+
  '<div id="fs-push-admin-body" class="note" aria-live="polite">Загружаем сведения…</div>';
- const scope=container.querySelector('#fs-push-scope');
- if(isAdmin)scope.value='all';
+ const scope=inner.querySelector('#fs-push-scope');
+ if(isAdmin)scope.value='class';
  const refresh=async()=>{
-  const body=container.querySelector('#fs-push-admin-body');
+  const body=inner.querySelector('#fs-push-admin-body');
   body.innerHTML='<p class="note">Обновляем статистику…</p>';
   const scopeId=scope.value==='all'?null:classId;
   try{
@@ -976,8 +985,8 @@ async function fsRenderPushAdmin(panelRoot,classId,isAdmin){
   }catch(error){if(body.isConnected)body.innerHTML='<div class="toast bad">Не удалось загрузить статистику push: '+esc(error.message||String(error))+'</div>'}
  };
  scope.onchange=refresh;
- container.querySelector('#fs-push-refresh').onclick=refresh;
- await refresh();
+ inner.querySelector('#fs-push-refresh').onclick=refresh;
+ container.addEventListener('toggle',()=>{if(container.open)refresh()});
 }
 function renderPanel(){
   const root=$('#v-panel');
@@ -1009,16 +1018,15 @@ function renderPanel(){
       <div class="tile"><div class="k">Ознакомлено</div><div class="v" id="afs-panel-ack-count">${confirmed}</div><div class="h" id="afs-panel-ack-summary">Из ${feedback.length} опубликованных отзывов · все родители подтвердили</div></div>
       <div class="tile"><div class="k">WhatsApp · заполненность</div><div class="v" id="afs-phone-percent">—</div><div class="h" id="afs-phone-count">Телефоны родителей</div></div>
     </div>
-    <div class="panel" id="afs-push-overview"><h2>🔔 Push-уведомления родителей</h2><p class="note">Загрузка статистики подключений…</p></div>
-    <div class="panel"><div class="afs-history-head"><h2>История отзывов</h2>
+    <details class="panel fs-fold-panel" id="afs-push-overview"><summary><span class="fs-panel-icon"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span><strong>Push-уведомления родителей</strong><span class="note fs-fold-hint">Показать статистику</span></summary><div id="afs-push-inner"><p class="note">Разверните раздел, чтобы загрузить сведения.</p></div></details>
+    <details class="panel fs-fold-panel"><summary><strong>История отзывов</strong><span class="note fs-fold-hint">Развернуть список</span></summary><div class="fs-fold-content"><div class="afs-history-head">
       <div class="afs-history-filters" role="group" aria-label="Фильтр отзывов">
         <button class="chipbtn" data-afs-filter="all" aria-pressed="true">Все</button>
         <button class="chipbtn" data-afs-filter="read" aria-pressed="false">Ознакомлены</button>
         <button class="chipbtn" data-afs-filter="waiting" aria-pressed="false">Ожидают</button>
       </div></div>
       <p class="note">Новые отзывы выше старых. Откройте отзыв, чтобы увидеть содержание и подтверждения родителей.</p>
-      <div id="afs-weekly-history-list"></div><div id="afs-history-list"></div>
-    </div>`;
+      <div id="afs-weekly-history-list"></div><div id="afs-history-list"></div></div></details>`;
   fsRenderPushAdmin(root,classId,isAdmin);
   const selector=root.querySelector('#afs-panel-class');
   selector.onchange=()=>{state.panelClass=Number(selector.value);renderPanel()};
