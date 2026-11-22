@@ -42,7 +42,7 @@ a.card:hover{transform:translateY(-3px);box-shadow:0 12px 25px #00000010}.glyph{
 <div class="side-foot">Future School Platform<br>Внутренняя рабочая система школы</div>
 </aside>
 <main class="main">
-<div class="top"><div><b>Рабочее пространство школы</b><small>Astana Future School · 2026–2027</small></div><div class="user-pill"><span>●</span><span id="topName">Пользователь</span></div></div>
+<div class="top"><div><b>Рабочее пространство школы</b><small>Astana Future School · 2026–2027</small></div><div style="display:flex;gap:12px;align-items:center"><span id="fs-global-notif"></span><div class="user-pill"><span>●</span><span id="topName">Пользователь</span></div></div></div>
 <div class="hero"><div><div class="tag" id="roleTag">ЛИЧНЫЙ КАБИНЕТ</div><h1 id="greeting">Добро пожаловать!</h1><p class="lead">Ваши рабочие инструменты и школьная информация — в одном месте.</p></div><div class="hero-mark">✳</div></div>
 <div class="section-head"><h2>Разделы платформы</h2><small>Доступ определяется вашей ролью</small></div>
 <div class="cards">
@@ -58,14 +58,17 @@ a.card:hover{transform:translateY(-3px);box-shadow:0 12px 25px #00000010}.glyph{
 </main></div>
 <button id="aiButton" class="ai hidden" type="button">✦ Future School AI</button>
 <div id="aiDialog" class="ai-dialog hidden" role="dialog" aria-label="Future School AI"><h3>Future School AI</h3><p>Помощник будет отвечать на вопросы по разрешённым школьным данным после подключения защищённых серверных инструментов. Сейчас ответы не генерируются.</p><button class="btn secondary" id="aiClose">Закрыть</button></div>
+<script src="/notifications-widget.js"></script>
 <script>
 function initPortal(){
 const URL='https://wvkcafxruzguifybeeab.supabase.co';
 const KEY='sb_publishable_LoLzxEVI2-ZatrQ8AVW1Fg_mtPVwcj-';
 const client=window.supabase.createClient(URL,KEY);
+let fsGlobalNotifications=null;
 const $=id=>document.getElementById(id);
 function phone(raw){let d=raw.replace(/\D/g,'');if(/^8\d{10}$/.test(d))d='7'+d.slice(1);if(/^\d{10}$/.test(d))d='7'+d;return /^7\d{10}$/.test(d)?'+'+d:null}
 async function show(session){
+ if(fsGlobalNotifications){fsGlobalNotifications.destroy();fsGlobalNotifications=null}
  $('loginView').classList.toggle('hidden',!!session);$('appView').classList.toggle('hidden',!session);$('aiButton').classList.toggle('hidden',!session);
  if(!session)return;
  try{
@@ -73,6 +76,7 @@ async function show(session){
  const [p,r]=await Promise.all([client.from('profiles').select('full_name,is_active').eq('id',uid).maybeSingle(),client.from('user_roles').select('role').eq('user_id',uid)]);
  if(p.error||r.error||!p.data?.is_active)throw Error('Не удалось подтвердить профиль и права доступа.');
  const roles=(r.data||[]).map(x=>x.role);const superadmin=roles.includes('superadmin');
+ if(window.fsMountNotificationWidget)fsGlobalNotifications=window.fsMountNotificationWidget(client,$('fs-global-notif'));
  const display=p.data.full_name||'Пользователь';
  $('greeting').textContent='Здравствуйте, '+display.split(' ')[0]+'!';
  $('topName').textContent=display;
