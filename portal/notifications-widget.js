@@ -4,7 +4,7 @@ if(window.fsMountNotificationWidget)return;
 const css=`
 .fsn-host{display:inline-flex;position:relative;align-items:center;color:var(--ink,#20252d);font:13px/1.5 system-ui,sans-serif}
 .fsn-bell{width:40px;height:40px;background:#fff;border:1px solid #ddd;border-radius:12px;cursor:pointer;position:relative;font-size:20px}
-.fsn-badge{position:absolute;right:-7px;top:-7px;background:#b63e41;border:2px solid white;border-radius:20px;min-width:21px;height:21px;padding:0 3px;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
+.fsn-badge[hidden],.fsn-pop[hidden]{display:none!important}.fsn-badge{position:absolute;right:-7px;top:-7px;background:#b63e41;border:2px solid white;border-radius:20px;min-width:21px;height:21px;padding:0 3px;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
 .fsn-pop{position:absolute;top:48px;right:0;width:min(370px,calc(100vw - 24px));z-index:3000;background:#fff;border:1px solid #dedbd4;box-shadow:0 16px 35px #2223;border-radius:14px;padding:13px;max-height:75vh;overflow:auto}
 .fsn-item{width:100%;display:block;text-align:left;border:0;border-bottom:1px solid #eee;padding:11px 8px;background:#fff;cursor:pointer;color:#242424}
 .fsn-item.unread{background:#f0f3f6}.fsn-item strong{display:block}.fsn-item small{display:block;color:#666;margin-top:4px}
