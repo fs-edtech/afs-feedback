@@ -248,11 +248,38 @@ header{box-shadow:0 2px 16px #00000005}
 .fs-week-subjects>.fs-week-actions{margin-top:22px!important;padding-top:14px!important;border-top:1px solid var(--line);clear:both}
 .fs-week-subjects>label{display:block;margin:14px 0}
 @media(max-width:640px){.fs-manage-accordion>summary{padding:14px 12px}.fs-week-subjects>.fs-week-actions{gap:10px}}
+
+.fs-notif-anchor{position:relative;display:flex;align-items:center}
+.fs-notif-anchor[hidden],.fs-notif-popover[hidden],.fs-notif-modal[hidden],.fs-notif-count[hidden]{display:none!important}
+.fs-notif-bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;background:transparent;border:1px solid var(--line);border-radius:12px;color:var(--text);cursor:pointer}
+.fs-notif-bell:hover{background:var(--surface-secondary)}
+.fs-notif-count{position:absolute;top:-7px;right:-8px;display:flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:99px;background:#b33c42;color:#fff;font-size:10px;font-weight:800;line-height:1;border:2px solid var(--surface)}
+.fs-notif-popover{position:absolute;right:0;top:calc(100% + 9px);z-index:1200;width:min(370px,calc(100vw - 20px));max-height:70vh;overflow:auto;border-radius:15px;background:var(--surface);box-shadow:0 12px 36px #10182835;border:1px solid var(--line);padding:12px}
+.fs-notif-popover-head,.fs-notif-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fs-notif-item{display:block;width:100%;text-align:left;padding:12px 10px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);cursor:pointer;border-radius:6px}
+.fs-notif-item:hover,.fs-notif-item.unread{background:var(--surface-secondary)}
+.fs-notif-item strong{font-size:13px;display:block}
+.fs-notif-item .fs-notif-body{font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px}
+.fs-notif-item time{font-size:11px;color:var(--muted)}
+.fs-notif-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px}
+.fs-notif-modal{position:fixed;inset:0;background:rgba(17,25,40,.55);z-index:10050;padding:24px 12px;display:flex;align-items:flex-start;justify-content:center;overflow:auto}
+.fs-notif-dialog{width:min(680px,100%);margin:3vh auto;background:var(--surface);color:var(--text);padding:20px;border-radius:18px;max-height:88vh;overflow:auto}
+.fs-notif-settings-row{display:grid;grid-template-columns:minmax(0,1fr) 70px 70px;align-items:center;gap:9px;border-bottom:1px solid var(--line);padding:14px 0}
+.fs-notif-settings-row input{justify-self:center;width:18px;height:18px}
+.fs-notif-settings-row small{display:block;color:var(--muted);margin-top:3px;font-size:11px}
+@media(max-width:480px){.fs-notif-popover{right:-75px}.fs-notif-dialog{padding:14px}.fs-notif-settings-row{grid-template-columns:minmax(0,1fr) 58px 58px}}
 </style>
 
 <header><div class="wrap hrow">
   <div class="brand"><b>Обратная связь AFS</b><a href="/" style="font-size:12px;color:var(--muted);text-decoration:underline;margin-top:4px">← Главная Future School</a><span id="account-role-label">Вход в систему</span></div>
-  <div class="who"><span id="me">Не авторизован</span><button id="change-password-open" class="btn ghost" type="button" hidden>Сменить пароль</button><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
+  <div class="who"><span id="me">Не авторизован</span>
+  <div class="fs-notif-anchor" id="fs-notif-anchor" hidden>
+    <button type="button" id="fs-notif-bell" class="fs-notif-bell" title="Уведомления" aria-label="Уведомления" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg><span class="fs-notif-count" id="fs-notif-count" hidden>0</span>
+    </button>
+    <div id="fs-notif-popover" class="fs-notif-popover" hidden></div>
+  </div>
+  <button id="change-password-open" class="btn ghost" type="button" hidden>Сменить пароль</button><button id="logout" class="btn ghost" type="button" hidden>Выйти</button></div>
   <nav class="tabs" role="tablist" aria-label="Разделы">
     <button role="tab" id="tab-send" data-tab="send" aria-selected="true">Отправить</button>
     <button role="tab" id="tab-panel" data-tab="panel" aria-selected="false">Панель</button>
@@ -288,7 +315,7 @@ header{box-shadow:0 2px 16px #00000005}
   <section id="v-roster" hidden></section>
   <section id="v-manage" hidden></section>
   <section id="v-parent" hidden></section>
-</main><div id="fs-week-modal" class="fs-week-modal" hidden><div class="fs-week-dialog" role="dialog" aria-modal="true" aria-label="Просмотр недельной обратной связи"><div class="fs-week-actions"><strong style="flex:1">Предпросмотр обратной связи</strong><button type="button" class="btn ghost" id="fs-week-close">Закрыть ✕</button></div><div id="fs-week-document"></div><div id="fs-week-modal-actions" class="fs-week-actions"></div></div></div>
+</main><div id="fs-notif-modal" class="fs-notif-modal" hidden><div class="fs-notif-dialog" role="dialog" aria-modal="true" aria-labelledby="fs-notif-modal-title"><div class="fs-notif-modal-head"><h2 id="fs-notif-modal-title">Уведомления</h2><button type="button" class="btn ghost" id="fs-notif-modal-close">Закрыть ✕</button></div><div id="fs-notif-modal-content"></div></div></div><div id="fs-week-modal" class="fs-week-modal" hidden><div class="fs-week-dialog" role="dialog" aria-modal="true" aria-label="Просмотр недельной обратной связи"><div class="fs-week-actions"><strong style="flex:1">Предпросмотр обратной связи</strong><button type="button" class="btn ghost" id="fs-week-close">Закрыть ✕</button></div><div id="fs-week-document"></div><div id="fs-week-modal-actions" class="fs-week-actions"></div></div></div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -399,9 +426,10 @@ async function loadData(){
     $('#tab-'+section).setAttribute('aria-selected',String(section===state.tab));
   }
   render();
+  fsNotifStart();
 }
 async function enter(session){
-  if(!session){state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
+  if(!session){fsNotifStop();state.user=null;state.roles=[];state.tab='send';$('#tab-parent').hidden=true;$('#tab-manage').hidden=true;setLogin(false);$('#me').textContent='Не авторизован';$('#account-role-label').textContent='Вход в систему';return;}
   state.user=session.user; setLogin(true);
   try{await loadData();await fsHandleCaptureLink()}catch(e){$('#classbar').innerHTML='';$('#slist').innerHTML=`<div class="empty">${esc(msg(e))}</div>`;$('#composer').innerHTML='<div class="empty">Не удалось загрузить данные. Проверьте RLS и обновите страницу.</div>';}
 }
@@ -451,6 +479,114 @@ $('#change-password-form').onsubmit=async e=>{
  output.textContent='Пароль изменён';output.className='toast ok';$('#change-password-form').reset();
 };
 
+
+let fsNotifItems=[],fsNotifTimer=null,fsNotifLoading=false,fsNotifView='list';
+async function fsNotifRpc(params){const {data,error}=await supabase.rpc('fs_notification_center',params);if(error)throw Error(msg(error));return data}
+function fsNotifDate(value){try{return new Date(value).toLocaleString('ru-RU')}catch{return ''}}
+function fsNotifSetModal(open){
+ const modal=$('#fs-notif-modal');modal.hidden=!open;
+ if(open){$('#fs-notif-popover').hidden=true;$('#fs-notif-bell').setAttribute('aria-expanded','false')}
+ document.body.style.overflow=open?'hidden':'';
+}
+function fsNotifRenderBell(){
+ const unread=Number(fsNotifUnread||0),badge=$('#fs-notif-count');
+ badge.hidden=unread===0;
+ badge.textContent=unread>10?'10+':String(unread);
+ $('#fs-notif-bell').setAttribute('aria-label','Уведомления'+(unread?' · '+unread+' непрочитанных':''));
+}
+let fsNotifUnread=0;
+async function fsNotifLoad(){
+ if(!state.user||fsNotifLoading)return;
+ fsNotifLoading=true;
+ try{
+  const response=await fsNotifRpc({p_action:'list',p_limit:60});
+  fsNotifItems=Array.isArray(response?.items)?response.items:[];
+  fsNotifUnread=Number(response?.unread||0);
+  fsNotifRenderBell();
+  if(!$('#fs-notif-popover').hidden)fsNotifRenderPopover();
+  if(!$('#fs-notif-modal').hidden&&fsNotifView==='list')fsNotifRenderAll();
+ }catch(e){console.warn('Уведомления недоступны:',e.message)}
+ finally{fsNotifLoading=false}
+}
+function fsNotifItemHtml(n){
+ return '<button type="button" class="fs-notif-item '+(n.read_at?'':'unread')+'" data-notif-id="'+esc(n.id)+'"><strong>'+(n.read_at?'':'● ')+esc(n.title)+(Number(n.count||1)>1?' · '+Number(n.count):'')+'</strong><div class="fs-notif-body">'+esc(n.body)+'</div><time>'+esc(fsNotifDate(n.updated_at))+'</time></button>';
+}
+async function fsNotifOpenItem(id){
+ const n=fsNotifItems.find(v=>v.id===id);if(!n)return;
+ if(!n.read_at){
+  try{await fsNotifRpc({p_action:'mark_read',p_id:n.id});n.read_at=new Date().toISOString();fsNotifUnread=Math.max(0,fsNotifUnread-1);fsNotifRenderBell()}catch(e){console.warn(e)}
+ }
+ if(n.link==='/feedback/'||n.link==='/feedback/'){fsNotifSetModal(false);$('#fs-notif-popover').hidden=true;
+   if(n.category==='feedback'&&state.roles.includes('parent'))pickTab('parent');
+   else if(n.category==='tasks'&&!$('#tab-weekly').hidden)pickTab('weekly');
+   else if(n.category==='feedback'&&!$('#tab-panel').hidden)pickTab('panel');
+ }else if(typeof n.link==='string'&&n.link.startsWith('/')&&!n.link.startsWith('//')){location.assign(n.link)}
+ else{fsNotifRenderPopover()}
+}
+function fsNotifWireItems(host){host.querySelectorAll('[data-notif-id]').forEach(b=>b.onclick=()=>fsNotifOpenItem(b.dataset.notifId))}
+async function fsNotifMarkAll(){try{await fsNotifRpc({p_action:'mark_all'});await fsNotifLoad()}catch(e){alert('Не удалось отметить прочитанным: '+e.message)}}
+function fsNotifRenderPopover(){
+ const host=$('#fs-notif-popover');
+ const newest=fsNotifItems.filter(n=>!n.read_at).slice(0,5);
+ const selected=newest.length?newest:fsNotifItems.slice(0,5);
+ host.innerHTML='<div class="fs-notif-popover-head"><strong>Уведомления</strong><button type="button" class="btn ghost" id="fs-notif-allread">Прочитать все</button></div>'+
+ (selected.map(fsNotifItemHtml).join('')||'<p class="note">Новых уведомлений пока нет.</p>')+
+ '<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-seeall">Все уведомления</button><button class="btn ghost" id="fs-notif-settings">⚙ Настройки</button></div>';
+ fsNotifWireItems(host);
+ host.querySelector('#fs-notif-allread').onclick=fsNotifMarkAll;
+ host.querySelector('#fs-notif-seeall').onclick=()=>{fsNotifView='list';fsNotifSetModal(true);fsNotifRenderAll()};
+ host.querySelector('#fs-notif-settings').onclick=()=>fsNotifOpenSettings();
+}
+function fsNotifRenderAll(){
+ fsNotifView='list';$('#fs-notif-modal-title').textContent='Все уведомления';
+ const host=$('#fs-notif-modal-content');
+ host.innerHTML='<div class="fs-notif-actions"><button class="btn ghost" id="fs-notif-modal-read">Прочитать все</button><button class="btn ghost" id="fs-notif-modal-settings">⚙ Настройки уведомлений</button></div>'+
+ (fsNotifItems.map(fsNotifItemHtml).join('')||'<p class="note">Уведомлений пока нет.</p>');
+ fsNotifWireItems(host);
+ host.querySelector('#fs-notif-modal-read').onclick=fsNotifMarkAll;
+ host.querySelector('#fs-notif-modal-settings').onclick=fsNotifOpenSettings;
+}
+async function fsNotifOpenSettings(){
+ fsNotifView='settings';fsNotifSetModal(true);$('#fs-notif-modal-title').textContent='Настройки уведомлений';
+ const host=$('#fs-notif-modal-content');host.innerHTML='<p class="note">Загружаем настройки…</p>';
+ try{
+  const categories=await fsNotifRpc({p_action:'categories'});
+  if(fsNotifView!=='settings')return;
+  host.innerHTML='<p class="note">Категории зависят от вашей роли. Уведомления внутри платформы не требуют разрешения браузера. Push для родительской обратной связи настраивается на устройстве отдельно.</p>'+
+   '<div class="fs-notif-settings-row" style="font-weight:700"><span>Категория</span><span>На сайте</span><span>Push</span></div>'+
+   categories.map(c=>'<label class="fs-notif-settings-row"><span><strong>'+esc(c.label)+'</strong><small>'+(!c.ready?'Модуль ещё подключается':'Настройки сохраняются для аккаунта')+'</small></span>'+
+   '<input type="checkbox" data-category="'+esc(c.id)+'" data-channel="inapp" '+(c.inapp?'checked':'')+(c.id==='system'?' disabled':'')+' aria-label="'+esc(c.label)+' на сайте">'+
+   '<span style="text-align:center">'+(c.push_available
+      ?'<span class="note">В «Мои дети»</span>'
+      :'<span class="note">—</span>')+'</span></label>').join('')+
+    (state.roles.includes('parent')?'<p class="note">Чтобы разрешить или запретить push на конкретном устройстве, откройте вкладку «Мои дети» и настройку «Уведомления о новых отчётах».</p>':'<p class="note">Push для других ролей и групповые сводки руководства будут подключены отдельным этапом.</p>');
+  host.querySelectorAll('[data-channel="inapp"]').forEach(el=>el.onchange=async()=>{
+   el.disabled=true;const val=el.checked;
+   try{await fsNotifRpc({p_action:'set_preference',p_category:el.dataset.category,p_inapp:val,p_push:false});await fsNotifLoad()}
+   catch(e){el.checked=!val;alert('Не удалось сохранить: '+e.message)}
+   finally{el.disabled=false}
+  });
+ }catch(e){host.innerHTML='<div class="toast bad">Ошибка настроек: '+esc(e.message)+'</div>'}
+}
+function fsNotifStart(){
+ $('#fs-notif-anchor').hidden=false;
+ fsNotifLoad();
+ if(fsNotifTimer)clearInterval(fsNotifTimer);
+ fsNotifTimer=setInterval(()=>{if(state.user&&document.visibilityState!=='hidden')fsNotifLoad()},45000);
+}
+function fsNotifStop(){
+ if(fsNotifTimer)clearInterval(fsNotifTimer);
+ fsNotifTimer=null;fsNotifItems=[];fsNotifUnread=0;fsNotifRenderBell();
+ $('#fs-notif-popover').hidden=true;$('#fs-notif-anchor').hidden=true;fsNotifSetModal(false);
+}
+$('#fs-notif-bell').onclick=()=>{
+ const pop=$('#fs-notif-popover');pop.hidden=!pop.hidden;
+ $('#fs-notif-bell').setAttribute('aria-expanded',String(!pop.hidden));
+ if(!pop.hidden){fsNotifRenderPopover();fsNotifLoad()}
+};
+$('#fs-notif-modal-close').onclick=()=>fsNotifSetModal(false);
+$('#fs-notif-modal').onclick=e=>{if(e.target.id==='fs-notif-modal')fsNotifSetModal(false)};
+document.addEventListener('click',e=>{const anchor=$('#fs-notif-anchor');if(anchor&&!anchor.contains(e.target))$('#fs-notif-popover').hidden=true});
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
 function pickTab(tab){if(tab==='roster'||(tab==='panel'&&$('#tab-panel').hidden))return;if(tab==='weekly'&&$('#tab-weekly').hidden)return;if(tab==='class'&&$('#tab-class').hidden)return;if(tab==='manage'&&!state.roles.some(r=>r==='superadmin'||r==='deputy'))return;if(tab==='parent'&&!state.roles.includes('parent'))return;state.tab=tab;for(const x of ['send','panel','class','roster','manage','parent','weekly']){$('#v-'+x).hidden=x!==tab;$('#tab-'+x).setAttribute('aria-selected',String(x===tab));}render();}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>pickTab(b.dataset.tab)));
