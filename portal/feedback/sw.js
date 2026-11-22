@@ -1,10 +1,10 @@
 'use strict';
 self.addEventListener('push',event=>{
- let data={title:'Future School',body:'В личном кабинете доступна новая обратная связь.',url:'/feedback/'};
+ let data={title:'Future School',body:'Пришла обратная связь.',url:'/feedback/'};
  try{if(event.data){const v=event.data.json();data={...data,...v}}}catch{}
  const safePath=typeof data.url==='string'&&data.url.startsWith('/feedback/')?data.url:'/feedback/';
  event.waitUntil(self.registration.showNotification('Future School',{
-  body:'Доступна новая еженедельная обратная связь. Откройте личный кабинет.',
+  body:'Пришла обратная связь.',
   tag:typeof data.tag==='string'?data.tag:'fs-feedback',
   icon:'/feedback/icon.svg',badge:'/feedback/icon.svg',
   data:{url:safePath},renotify:false
