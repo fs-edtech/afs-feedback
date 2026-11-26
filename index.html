@@ -189,10 +189,10 @@ td.num,th.num{text-align:right}
 <div id="login-screen" class="wrap" style="max-width:520px;margin-top:42px"><div class="panel" style="padding:26px"><h2>Вход в AFS Feedback</h2><p class="note">Войдите с учётной записью AFS Feedback.</p><form id="login-form" class="compose"><label>Email или номер телефона<input id="login-email" type="text" autocomplete="username" placeholder="email@example.com или +7 777 123 45 67" required></label><label>Пароль<input id="login-password" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Войти</button><div id="login-error" role="alert" class="note"></div></form></div></div>
 <div id="set-password-screen" class="wrap" style="max-width:520px;margin-top:42px" hidden><div class="panel" style="padding:26px"><h2>Завершить регистрацию AFS Feedback</h2><p class="note">Придумайте пароль для входа в личный кабинет.</p><form id="set-password-form" class="compose"><label>Новый пароль<input id="new-password" type="password" autocomplete="new-password" minlength="12" required></label><label>Повторите пароль<input id="confirm-password" type="password" autocomplete="new-password" minlength="12" required></label><button class="btn primary" type="submit">Установить пароль</button><div id="set-password-result" class="note" role="status"></div></form></div></div>
 <section id="change-password-panel" class="wrap" hidden style="max-width:520px;margin-top:18px">
-  <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose">
-    <label>Новый пароль (минимум 12 символов)<input id="change-password-new" type="password" minlength="12" autocomplete="new-password" required></label>
-    <label>Повторить новый пароль<input id="change-password-confirm" type="password" minlength="12" autocomplete="new-password" required></label>
-    <div class="actions"><button class="btn primary" type="submit">Сохранить пароль</button><button id="change-password-cancel" class="btn ghost" type="button">Отмена</button></div>
+  <div class="panel"><h2>Смена пароля</h2><form id="change-password-form" class="compose"><label>Действующий пароль<input id="change-password-current" type="password" autocomplete="current-password" required disabled></label>
+    <label>Новый пароль (минимум 12 символов)<input id="change-password-new" disabled type="password" minlength="12" autocomplete="new-password" required></label>
+    <label>Повторить новый пароль<input id="change-password-confirm" disabled type="password" minlength="12" autocomplete="new-password" required></label>
+    <div class="actions"><button class="btn primary" type="submit" disabled>Сохранить пароль</button><button id="change-password-cancel" class="btn ghost" type="button">Отмена</button></div>
     <div id="change-password-result" class="note" role="status"></div>
   </form></div>
 </section>
@@ -228,7 +228,7 @@ const parentTemporaryCredentials=new Map(); // Только в памяти вк
 const staffTemporaryCredentials=new Map(); // Только новые пароли этой сессии.
 
 let settingInvitationPassword = isInviteLink;
-function setLogin(isIn){ $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
+function setLogin(isIn){if(!isIn||settingInvitationPassword)fsClosePasswordChange(); $('#login-screen').hidden=isIn || settingInvitationPassword;$('#app-main').hidden=!isIn || settingInvitationPassword;$('#set-password-screen').hidden=!settingInvitationPassword;$('#logout').hidden=!isIn || settingInvitationPassword;$('#change-password-open').hidden=!isIn || settingInvitationPassword;document.querySelectorAll('.tabs button').forEach(b=>b.disabled=!isIn || settingInvitationPassword); }
 // Clear, reliable feedback when completing an email invitation.
 const passwordForm = $('#set-password-form');
 const passwordButton = passwordForm.querySelector('button[type="submit"]');
@@ -241,6 +241,7 @@ function passwordNotice(text, failed=false) {
 passwordForm.noValidate = true;
 passwordForm.addEventListener('submit', async e => {
   e.preventDefault();
+  if(!settingInvitationPassword||$('#set-password-screen').hidden)return;
   const pwd = $('#new-password').value;
   const confirmPwd = $('#confirm-password').value;
   if (!pwd || !confirmPwd) { passwordNotice('Заполните оба поля.', true); return; }
@@ -254,6 +255,7 @@ passwordForm.addEventListener('submit', async e => {
       passwordNotice('Ссылка приглашения истекла или не создала сессию. Запросите новое приглашение.', true);
       return;
     }
+    if(!settingInvitationPassword||$('#set-password-screen').hidden||!confirm('Установить новый пароль для этого аккаунта?'))return;
     passwordNotice('Сохраняем пароль…');
     const { error } = await supabase.auth.updateUser({ password: pwd });
     if (error) { passwordNotice('Ошибка: ' + msg(error), true); return; }
@@ -322,14 +324,56 @@ async function enter(session){
 }
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();$('#login-error').textContent='Выполняется вход…';const username=$('#login-email').value.trim();const isPhone=/^(?:\+?7|8)?[\d\s()\-]{10,20}$/.test(username);const credentials=isPhone?{phone:normalizeKzPhone(username),password:$('#login-password').value}:{email:username,password:$('#login-password').value};if(isPhone&&!credentials.phone){$('#login-error').textContent='Неверный формат телефона';return;}const {data,error}=await supabase.auth.signInWithPassword(credentials);if(error){$('#login-error').textContent=msg(error);return;}$('#login-error').textContent='';await enter(data.session);});
 $('#logout').addEventListener('click',async()=>{parentTemporaryCredentials.clear();await supabase.auth.signOut();await enter(null)});
-$('#change-password-open').onclick=()=>{$('#change-password-panel').hidden=!$('#change-password-panel').hidden;};
-$('#change-password-cancel').onclick=()=>{$('#change-password-panel').hidden=true;};
+// FS password-change guard: closed forms are disabled; verify existing password in an isolated client.
+let fsPasswordChangeOwner=null,fsPasswordChangeBusy=false;
+function fsClosePasswordChange(){
+ const panel=$('#change-password-panel'),form=$('#change-password-form');
+ fsPasswordChangeOwner=null;panel.hidden=true;form.reset();
+ form.querySelectorAll('input,button[type="submit"]').forEach(el=>el.disabled=true);
+ $('#change-password-result').textContent='';
+}
+$('#change-password-open').onclick=()=>{
+ if(fsPasswordChangeBusy)return;
+ if(!$('#change-password-panel').hidden){fsClosePasswordChange();return;}
+ if(!state.user?.id||settingInvitationPassword)return;
+ fsClosePasswordChange();
+ fsPasswordChangeOwner=state.user.id;$('#change-password-panel').hidden=false;
+ $('#change-password-form').querySelectorAll('input,button[type="submit"]').forEach(el=>el.disabled=false);
+ $('#change-password-current').focus();
+};
+$('#change-password-cancel').onclick=()=>{if(!fsPasswordChangeBusy)fsClosePasswordChange();};
 $('#change-password-form').onsubmit=async e=>{
- e.preventDefault();const p=$('#change-password-new').value,c=$('#change-password-confirm').value,output=$('#change-password-result');
- if(p.length<12 || p!==c){output.textContent='Введите одинаковые пароли длиной не менее 12 символов';return;}
- output.textContent='Сохраняем…';const {error}=await supabase.auth.updateUser({password:p});
- if(error){output.textContent='Ошибка: '+msg(error);output.className='toast bad';return;}
- output.textContent='Пароль изменён';output.className='toast ok';$('#change-password-form').reset();
+ e.preventDefault();
+ const panel=$('#change-password-panel'),form=$('#change-password-form'),output=$('#change-password-result');
+ const owner=fsPasswordChangeOwner;
+ if(panel.hidden||!owner||owner!==state.user?.id||settingInvitationPassword||fsPasswordChangeBusy)return;
+ const current=$('#change-password-current').value,p=$('#change-password-new').value,c=$('#change-password-confirm').value;
+ if(!current||p.length<12||p!==c){output.textContent='Введите действующий пароль и одинаковые новые пароли (не менее 12 символов).';output.className='toast bad';return;}
+ if(current===p){output.textContent='Новый пароль должен отличаться от действующего.';output.className='toast bad';return;}
+ if(!confirm('Действительно изменить пароль? Прежний пароль перестанет действовать.'))return;
+ fsPasswordChangeBusy=true;
+ form.querySelectorAll('input,button').forEach(el=>el.disabled=true);
+ output.textContent='Проверяем действующий пароль…';output.className='note';
+ let verifier=null;
+ try{
+  const {data:{user},error:ue}=await supabase.auth.getUser();
+  if(ue||!user||user.id!==owner)throw Error('Сессия изменилась. Войдите заново.');
+  const credential=user.email?{email:user.email,password:current}:user.phone?{phone:user.phone,password:current}:null;
+  if(!credential)throw Error('Не найден логин аккаунта.');
+  verifier=createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'fs-password-verification'}});
+  const {data,error}=await verifier.auth.signInWithPassword(credential);
+  if(error||data?.user?.id!==owner)throw Error('Действующий пароль неверен. Пароль не изменён.');
+  if(panel.hidden||fsPasswordChangeOwner!==owner||state.user?.id!==owner)throw Error('Форма закрыта. Пароль не изменён.');
+  output.textContent='Сохраняем…';
+  const {error:changeError}=await verifier.auth.updateUser({password:p});
+  if(changeError)throw changeError;
+  fsClosePasswordChange();alert('Пароль успешно изменён. При следующем входе используйте новый пароль.');
+ }catch(err){output.textContent='Ошибка: '+msg(err);output.className='toast bad';}
+ finally{
+  if(verifier)try{await verifier.auth.signOut({scope:'local'});}catch{}
+  fsPasswordChangeBusy=false;
+  if(!panel.hidden&&fsPasswordChangeOwner===state.user?.id){form.querySelectorAll('input,button').forEach(el=>el.disabled=false);$('#change-password-current').value='';}
+ }
 };
 
 function classStudents(){return state.students.filter(s=>s.class_id===state.selectedClass)}
